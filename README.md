@@ -70,7 +70,6 @@ pip install hffs
 ```
 
 * [`datasets`](https://huggingface.co/docs/datasets/filesystems#load-and-save-your-datasets-using-your-cloud-storage-filesystem)
-https://huggingface.co/docs/datasets/tutorial
 
 ```python
 >>> import datasets
