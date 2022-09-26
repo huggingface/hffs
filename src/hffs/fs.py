@@ -287,7 +287,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 class HfFile(fsspec.spec.AbstractBufferedFile):
 
     # LFS "trigger size" - needed to delegate the upload mode resolution to `upload_file` for small files
-    DEFAULT_BLOCK_SIZE = 10 * 2**20 # 10 MiB
+    DEFAULT_BLOCK_SIZE = 10 * 2**20  # 10 MiB
 
     def _fetch_range(self, start, end):
         headers = {"range": f"bytes={start}-{end}", "user-agent": _http_user_agent()}
@@ -314,26 +314,22 @@ class HfFile(fsspec.spec.AbstractBufferedFile):
 
     def _initiate_upload(self):
         self.temp_file = tempfile.NamedTemporaryFile(delete=False)
-        self.__size = 0
 
     def _upload_chunk(self, final=False):
         self.buffer.seek(0)
         block = self.buffer.read()
-        if final and len(block) == self.loc:
-            # first flush
-            self.fs._api.upload_file(
-                path_or_fileobj=self.temp_file.name,
-                path_in_repo=self.path,
-                repo_id=self.fs.repo_id,
-                token=self.fs.token,
-                repo_type=self.fs.repo_type,
-                revision=self.fs.revision,
-                commit_message=f"Upload {self.path} with hffs",
-            )
-        else:
-
+        # if final and len(block) == self.loc:
+        #     # delegate first flush to `upload_file` if possible
+        #     self.fs._api.upload_file(
+        #         path_or_fileobj=self.temp_file.name,
+        #         path_in_repo=self.path,
+        #         repo_id=self.fs.repo_id,
+        #         token=self.fs.token,
+        #         repo_type=self.fs.repo_type,
+        #         revision=self.fs.revision,
+        #         commit_message=f"Upload {self.path} with hffs",
+        #     )
         self.temp_file.write(block)
-        self.__size += len(block)
         if final:
             self.temp_file.close()
             self.fs._api.upload_file(
@@ -345,6 +341,5 @@ class HfFile(fsspec.spec.AbstractBufferedFile):
                 revision=self.fs.revision,
                 commit_message=f"Upload {self.path} with hffs",
             )
-            print("Uploaded size: ", self.__size)
             os.remove(self.temp_file.name)
             self.fs.invalidate_cache()
