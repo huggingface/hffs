@@ -1,11 +1,9 @@
 import time
 import unittest
-from unittest.mock import patch
 
 import fsspec
 from fsspec.spec import AbstractBufferedFile
-from huggingface_hub import HfApi, hf_hub_url
-from huggingface_hub.constants import ENDPOINT
+from huggingface_hub import HfApi
 
 from hffs import HfFileSystem
 
@@ -20,22 +18,9 @@ class HfFileSystemTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls._api = HfApi(endpoint=ENDPOINT_STAGING)
-        cls._token = TOKEN
         cls._api.set_access_token(TOKEN)
-
-        cls._hf_api_repo_info_patch = patch("hffs.spec.repo_info", cls._api.repo_info)
-        cls._hf_api_upload_file_patch = patch("hffs.spec.upload_file", cls._api.upload_file)
-        cls._hf_api_delete_file_patch = patch("hffs.spec.delete_file", cls._api.delete_file)
-
-        def _hf_hub_url_staging(*args, **kwargs):
-            return hf_hub_url(*args, **kwargs).replace(ENDPOINT, ENDPOINT_STAGING)
-
-        cls._hf_hub_url_patch = patch("hffs.spec.hf_hub_url", side_effect=_hf_hub_url_staging)
-
-        cls._hf_api_repo_info_patch.start()
-        cls._hf_api_upload_file_patch.start()
-        cls._hf_api_delete_file_patch.start()
-        cls._hf_hub_url_patch.start()
+        cls._endpoint = ENDPOINT_STAGING
+        cls._token = TOKEN
 
         if HfFileSystem.protocol not in fsspec.available_protocols():
             fsspec.register_implementation(HfFileSystem.protocol, HfFileSystem)
@@ -44,13 +29,8 @@ class HfFileSystemTests(unittest.TestCase):
     def tearDownClass(cls):
         cls._api.unset_access_token()
 
-        cls._hf_api_repo_info_patch.stop()
-        cls._hf_api_upload_file_patch.stop()
-        cls._hf_api_delete_file_patch.stop()
-        cls._hf_hub_url_patch.stop()
-
     def setUp(self):
-        repo_name = f"repo_txt_data-{int(time.time() * 10e3)}"
+        repo_name = f"repo_data-{int(time.time() * 10e3)}"
         repo_id = f"{USER}/{repo_name}"
         self._api.create_repo(
             repo_id,
@@ -59,38 +39,51 @@ class HfFileSystemTests(unittest.TestCase):
             private=True,
         )
         self._api.upload_file(
-            repo_id=repo_id,
             path_or_fileobj="dummy text data".encode("utf-8"),
-            token=TOKEN,
             path_in_repo="data/text_data.txt",
+            repo_id=repo_id,
+            token=TOKEN,
+            repo_type="dataset",
+        )
+        self._api.upload_file(
+            path_or_fileobj=b"dummy binary data",
+            path_in_repo="data/binary_data.bin",
+            repo_id=repo_id,
+            token=TOKEN,
             repo_type="dataset",
         )
         self.repo_id = repo_id
+        self.repo_type = "dataset"
 
     def tearDown(self):
-        self._api.delete_repo(self.repo_id, token=self._token, repo_type="dataset")
+        self._api.delete_repo(self.repo_id, token=self._token, repo_type=self.repo_type)
 
     def test_glob(self):
-        hffs = HfFileSystem(self.repo_id, token=self._token, repo_type="dataset")
+        hffs = HfFileSystem(self.repo_id, endpoint=self._endpoint, token=self._token, repo_type=self.repo_type)
         self.assertEqual(sorted(hffs.glob("*")), sorted([".gitattributes", "data"]))
 
     def test_file_type(self):
-        hffs = HfFileSystem(self.repo_id, token=self._token, repo_type="dataset")
+        hffs = HfFileSystem(self.repo_id, endpoint=self._endpoint, token=self._token, repo_type=self.repo_type)
         self.assertTrue(hffs.isdir("data") and not hffs.isdir(".gitattributes"))
         self.assertTrue(hffs.isfile("data/text_data.txt") and not hffs.isfile("data"))
 
     def test_remove_file(self):
-        hffs = HfFileSystem(self.repo_id, token=self._token, repo_type="dataset")
-        hffs.rm("data/text_data.txt")
-        self.assertEqual(hffs.glob("data/*"), [])
+        hffs = HfFileSystem(self.repo_id, endpoint=self._endpoint, token=self._token, repo_type=self.repo_type)
+        hffs.rm_file("data/text_data.txt")
+        self.assertEqual(hffs.glob("data/*"), ["data/binary_data.bin"])
+
+    def test_remove_directory(self):
+        hffs = HfFileSystem(self.repo_id, endpoint=self._endpoint, token=self._token, repo_type=self.repo_type)
+        hffs.rm("data", recursive=True)
+        self.assertNotIn("data", hffs.ls(""))
 
     def test_read_file(self):
-        hffs = HfFileSystem(self.repo_id, token=self._token, repo_type="dataset")
+        hffs = HfFileSystem(self.repo_id, endpoint=self._endpoint, token=self._token, repo_type=self.repo_type)
         with hffs.open("data/text_data.txt", "r") as f:
             self.assertEqual(f.read(), "dummy text data")
 
     def test_write_file(self):
-        hffs = HfFileSystem(self.repo_id, token=self._token, repo_type="dataset")
+        hffs = HfFileSystem(self.repo_id, endpoint=self._endpoint, token=self._token, repo_type=self.repo_type)
         data = "new text data"
         with hffs.open("data/new_text_data.txt", "w") as f:
             f.write(data)
@@ -99,7 +92,7 @@ class HfFileSystemTests(unittest.TestCase):
             self.assertEqual(f.read(), data)
 
     def test_write_file_multiple_chunks(self):
-        hffs = HfFileSystem(self.repo_id, token=self._token, repo_type="dataset")
+        hffs = HfFileSystem(self.repo_id, endpoint=self._endpoint, token=self._token, repo_type=self.repo_type)
         data = "new text data big" * AbstractBufferedFile.DEFAULT_BLOCK_SIZE
         with hffs.open("data/new_text_data_big.txt", "w") as f:
             for _ in range(2):
@@ -110,27 +103,38 @@ class HfFileSystemTests(unittest.TestCase):
             for _ in range(2):
                 self.assertEqual(f.read(len(data)), data)
 
+    @unittest.skip("Not implemented yet")
     def test_append_file(self):
-        hffs = HfFileSystem(self.repo_id, token=self._token, repo_type="dataset")
+        hffs = HfFileSystem(self.repo_id, endpoint=self._endpoint, token=self._token, repo_type=self.repo_type)
         with hffs.open("data/text_data.txt", "a") as f:
             f.write(" appended text")
 
         with hffs.open("data/text_data.txt", "r") as f:
             self.assertEqual(f.read(), "dummy text data appended text")
 
-    def test_cp_file(self):
-        hffs = HfFileSystem(self.repo_id, token=self._token, repo_type="dataset")
-        hffs.cp_file("data/text_data.txt", "data/new_text_data.txt")
-        with hffs.open("data/new_text_data.txt", "r") as f:
+    def test_copy_file(self):
+        hffs = HfFileSystem(self.repo_id, endpoint=self._endpoint, token=self._token, repo_type=self.repo_type)
+        # Non-LFS file
+        self.assertIsNone(hffs.info("data/text_data.txt")["lfs"])
+        hffs.cp_file("data/text_data.txt", "data/text_data_copy.txt")
+        with hffs.open("data/text_data_copy.txt", "r") as f:
             self.assertEqual(f.read(), "dummy text data")
+        self.assertIsNone(hffs.info("data/text_data_copy.txt")["lfs"])
+        # LFS file
+        self.assertIsNotNone(hffs.info("data/binary_data.bin")["lfs"])
+        hffs.cp_file("data/binary_data.bin", "data/binary_data_copy.bin")
+        with hffs.open("data/binary_data_copy.bin", "rb") as f:
+            self.assertEqual(f.read(), b"dummy binary data")
+        self.assertIsNotNone(hffs.info("data/binary_data_copy.bin")["lfs"])
 
     def test_initialize_from_fsspec(self):
         fs, _, paths = fsspec.get_fs_token_paths(
             f"hf://{self.repo_id}:/data/text_data.txt",
-            storage_options={"token": self._token, "repo_type": "dataset"},
+            storage_options={"endpoint": self._endpoint, "token": self._token, "repo_type": self.repo_type},
         )
         self.assertIsInstance(fs, HfFileSystem)
+        self.assertEqual(fs._api.endpoint, self._endpoint)
         self.assertEqual(fs.repo_id, self.repo_id)
         self.assertEqual(fs.token, self._token)
-        self.assertEqual(fs.repo_type, "dataset")
+        self.assertEqual(fs.repo_type, self.repo_type)
         self.assertEqual(paths, ["data/text_data.txt"])
