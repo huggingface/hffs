@@ -2,4 +2,4 @@
 
 __version__ = "0.0.1.dev0"
 
-from .spec import HfFileSystem
+from .fs import HfFileSystem
