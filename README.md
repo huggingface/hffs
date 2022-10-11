@@ -33,12 +33,12 @@ Instantiation via `fsspec`:
 ```python
 >>> import fsspec
 
-# Instantiate a `hffs.HfFileSystem` object
->>> fs = fsspec.filesystem("hf://my-username/my-dataset-repo", repo_type="dataset")
+>>> # Instantiate a `hffs.HfFileSystem` object
+>>> fs = fsspec.filesystem("hf://my-username/my-model-repo", repo_type="model")
 >>> fs.ls("")
-['.gitattributes', 'my-file.txt']
+['.gitattributes', 'config.json', 'pytorch_model.bin']
 
-# Instantiate a `hffs.HfFileSystem` object and write a file to it
+>>> # Instantiate a `hffs.HfFileSystem` object and write a file to it
 >>> with fsspec.open("hf://my-username/my-dataset-repo:/my-file-new.txt", repo_type="dataset"):
 ...     f.write("Hello, world1")
 ...     f.write("Hello, world2")
@@ -74,7 +74,7 @@ pip install hffs
 ```python
 >>> import datasets
 
->>> # Cache a (large) dataset inside a repo
+>>> # Export a (large) dataset to a repo
 >>> cache_dir = "hf://my-username/my-dataset-repo"
 >>> builder = datasets.load_dataset_builder("path/to/local/loading_script/loading_script.py", cache_dir=cache_dir, storage_options={"repo_type": "dataset"})
 >>> builder.download_and_prepare(file_format="parquet")
@@ -84,4 +84,23 @@ pip install hffs
 >>> # Process the examples
 >>> for ex in dset:
 ...    ...
+```
+
+* [`zarr`](https://zarr.readthedocs.io/en/stable/tutorial.html#io-with-fsspec)
+
+```python
+>>> import numpy as np
+>>> import zarr
+
+>>> embeddings = np.random.randn(50000, 1000).astype("float32")
+
+>>> # Write an array to a repo acting as a remote zarr store
+>>> with zarr.open_group("hf://my-username/my-model-repo:/array-store", mode="w", storage_options={"repo_type": "model"}) as root:
+...    foo = root.create_group("embeddings")
+...    foobar = foo.zeros('experiment_0', shape=(50000, 1000), chunks=(10000, 1000), dtype='f4')
+...    foobar[:] = embeddings
+
+>>> # Read from a remote zarr store
+>>> with zarr.open_group("hf://my-username/my-model-repo:/array-store", mode="r", storage_options={"repo_type": "model"}) as root:
+...    first_row = root["embeddings/experiment_0"][0]
 ```
