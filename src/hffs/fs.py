@@ -35,7 +35,7 @@ def _path_to_http_url(
     if revision is None:
         revision = huggingface_hub.constants.DEFAULT_REVISION
 
-    return f"{endpoint}/{repo_id}/resolve/{quote(revision, safe='')}/{path_in_repo}"
+    return f"{endpoint}/{repo_id}/resolve/{quote(revision, safe='')}/{quote(path_in_repo, safe='')}"
 
 
 class HfFileSystem(fsspec.AbstractFileSystem):
@@ -171,7 +171,8 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         repo_id, *revisions = repo_id.split("@", 1)
         out = {}
         out["repo_id"] = repo_id
-        out["revision"] = revisions[0] if revisions else None
+        if revisions:
+            out["revision"] = revisions[0]
         return out
 
     def _open(

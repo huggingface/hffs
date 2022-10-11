@@ -130,11 +130,17 @@ class HfFileSystemTests(unittest.TestCase):
     def test_initialize_from_fsspec(self):
         fs, _, paths = fsspec.get_fs_token_paths(
             f"hf://{self.repo_id}:/data/text_data.txt",
-            storage_options={"endpoint": self._endpoint, "token": self._token, "repo_type": self.repo_type},
+            storage_options={
+                "endpoint": self._endpoint,
+                "token": self._token,
+                "repo_type": self.repo_type,
+                "revision": "test-branch",
+            },
         )
         self.assertIsInstance(fs, HfFileSystem)
         self.assertEqual(fs._api.endpoint, self._endpoint)
         self.assertEqual(fs.repo_id, self.repo_id)
         self.assertEqual(fs.token, self._token)
         self.assertEqual(fs.repo_type, self.repo_type)
+        self.assertEqual(fs.revision, "test-branch")
         self.assertEqual(paths, ["data/text_data.txt"])
