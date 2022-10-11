@@ -1,6 +1,5 @@
 import collections
 import os
-import sys
 import tempfile
 from pathlib import PurePosixPath
 from typing import Optional
@@ -15,18 +14,8 @@ import requests
 from . import __version__
 
 
-# Stuff that would be great to have in huggingface_hub
-
-_PY_VERSION: str = sys.version.split()[0].rstrip("+")
-
-
-def _http_user_agent() -> str:
-    ua = f"hffs/{__version__}"
-    ua += f"; python/{_PY_VERSION}"
-    return ua
-
-
-# huggingface_hub.hf_hub_url doesn't support non-default endpoints
+# huggingface_hub.hf_hub_url doesn't support non-default endpoints at the moment
+# tracked in https://github.com/huggingface/huggingface_hub/issues/1082
 def _path_to_http_url(
     path_in_repo: str,
     repo_id: str,
@@ -104,6 +93,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
     root_marker = ""
     protocol = "hf"
 
+    @huggingface_hub.utils.validate_hf_hub_args
     def __init__(
         self,
         repo_id: str,
@@ -245,9 +235,9 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 
         if self.info(path1)["lfs"] is not None:
             # Perhaps we can add a CopyOperation to the commit API in huggingace_hub?
-            headers = {"user-agent": _http_user_agent()}
-            if self.token:
-                headers["authorization"] = f"Bearer {self.token}"
+            headers = huggingface_hub.utils.build_hf_headers(
+                use_auth_token=self.token, library_name="hffs", library_version=__version__
+            )
             payload = {
                 "summary": f"Copy {path1} to {path2} with hffs",
                 "description": "",
@@ -267,8 +257,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 json=payload,
                 headers=headers,
             )
-            # huggingface_hub.utils.hf_raise_for_status(r)
-            r.raise_for_status()
+            huggingface_hub.utils.hf_raise_for_status(r)
         else:
             with self.open(path1, "rb") as f:
                 content = f.read()
@@ -285,20 +274,16 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 
 
 class HfFile(fsspec.spec.AbstractBufferedFile):
-
     # LFS "trigger size" - needed to delegate the upload mode resolution to `upload_file` for small files
-    DEFAULT_BLOCK_SIZE = 10 * 2**20  # 10 MiB
+    # DEFAULT_BLOCK_SIZE = 10 * 2**20  # 10 MiB
 
     def _fetch_range(self, start, end):
-        headers = {"range": f"bytes={start}-{end}", "user-agent": _http_user_agent()}
-        if self.fs.token:
-            headers["authorization"] = f"Bearer {self.fs.token}"
-        # # Wait for https://github.com/huggingface/huggingface_hub/pull/1075 to be merged, then use `build_hf_headers` for that
-        # headers = huggingface.utils.build_hf_headers(
-        #     library_name="hffs",
-        #     library_version=__version__,
-        #     use_auth_token=self.fs.token,
-        # )
+        headers = {
+            "range": f"bytes={start}-{end}",
+            **huggingface_hub.utils.build_hf_headers(
+                use_auth_token=self.fs.token, library_name="hffs", library_version=__version__
+            ),
+        }
         url = _path_to_http_url(
             self.path,
             self.fs.repo_id,
@@ -306,10 +291,8 @@ class HfFile(fsspec.spec.AbstractBufferedFile):
             repo_type=self.fs.repo_type,
             revision=self.fs.revision,
         )
-        r = requests.get(url, headers=headers)
-        # huggingface_hub.utils.hf_raise_for_status(r)
-        r.raise_for_status()
-        # TODO: retry mechanism?
+        r = huggingface_hub.utils.http_backoff("GET", url, headers=headers)
+        huggingface_hub.utils.hf_raise_for_status(r)
         return r.content
 
     def _initiate_upload(self):

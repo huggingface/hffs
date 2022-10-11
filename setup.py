@@ -63,7 +63,7 @@ REQUIRED_PKGS = [
     "fsspec",
     "requests",
     # To use the HfApi to get the files info from huggingface.co
-    "huggingface-hub>=0.9.0,<1.0.0",
+    "huggingface_hub>=0.10.0",
 ]
 
 
