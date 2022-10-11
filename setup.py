@@ -1,5 +1,5 @@
 # Lint as: python3
-""" HuggingFace/HFfs is an interface to huggingface.co repositories.
+"""HuggingFace Filesystem is an interface to huggingface.co repositories.
 
 Note:
 
@@ -60,22 +60,19 @@ from setuptools import find_packages, setup
 
 REQUIRED_PKGS = [
     # minimum 2021.11.1 so that BlockSizeError is fixed: see https://github.com/fsspec/filesystem_spec/pull/830
-    "fsspec[http]>=2021.11.1",
-    # for data streaming via http
-    "aiohttp",
+    "fsspec",
+    "requests",
     # To use the HfApi to get the files info from huggingface.co
-    "huggingface-hub>=0.8.0,<1.0.0",
+    "huggingface_hub>=0.10.0",
 ]
 
 
 TESTS_REQUIRE = [
     "pytest",
-    "pytest-datadir",
-    "pytest-xdist",
 ]
 
 
-QUALITY_REQUIRE = ["black~=22.0", "flake8>=3.8.3", "isort>=5.0.0", "pyyaml>=5.3.1"]
+QUALITY_REQUIRE = ["black~=22.0", "flake8>=3.8.3", "isort>=5.0.0"]
 
 
 EXTRAS_REQUIRE = {
@@ -97,6 +94,7 @@ setup(
     license="Apache 2.0",
     package_dir={"": "src"},
     packages=find_packages("src"),
+    package_data={"hffs": ["py.typed"]},
     python_requires=">=3.7.0",
     install_requires=REQUIRED_PKGS,
     extras_require=EXTRAS_REQUIRE,
@@ -114,6 +112,6 @@ setup(
         "Programming Language :: Python :: 3.10",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
-    keywords="models datasets machine learning huggingface",
+    keywords="models datasets machine learning huggingface filesystem",
     zip_safe=False,  # Required for mypy to find the py.typed file
 )

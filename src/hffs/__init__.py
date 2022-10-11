@@ -1,6 +1,5 @@
-from fsspec import AbstractFileSystem
+# flake8: noqa
 
 __version__ = "0.0.1.dev0"
 
-class HfFileSystem(AbstractFileSystem):
-    pass
+from .fs import HfFileSystem
