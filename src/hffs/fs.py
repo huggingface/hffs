@@ -275,7 +275,6 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 
 
 class HfFile(fsspec.spec.AbstractBufferedFile):
-
     def _fetch_range(self, start, end):
         headers = {
             "range": f"bytes={start}-{end}",
