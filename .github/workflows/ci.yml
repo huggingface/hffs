@@ -17,24 +17,22 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.7"
+          python-version: 3.7
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install .[quality]
       - name: Check quality
         run: |
-          black --check --line-length 119 --target-version py37 tests src benchmarks datasets metrics
-          isort --check-only tests src benchmarks datasets metrics
-          flake8 tests src benchmarks datasets metrics
+          black --check tests src
+          isort --check-only tests src
+          flake8 tests src
 
   test:
     needs: check_code_quality
     strategy:
       matrix:
-        test: ['unit', 'integration']
         os: [ubuntu-latest, windows-latest]
-    continue-on-error: ${{ matrix.test == 'integration' }}
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install OS dependencies
@@ -53,4 +51,4 @@ jobs:
         run: pip install .[tests]
       - name: Test with pytest
         run: |
-          python -m pytest -rfExX -m ${{ matrix.test }} -n 2 --dist loadfile -sv ./tests/
+          python -m pytest -rfExX -sv ./tests/
