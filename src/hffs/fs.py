@@ -275,8 +275,6 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 
 
 class HfFile(fsspec.spec.AbstractBufferedFile):
-    # LFS "trigger size" - needed to delegate the upload mode resolution to `upload_file` for small files
-    # DEFAULT_BLOCK_SIZE = 10 * 2**20  # 10 MiB
 
     def _fetch_range(self, start, end):
         headers = {
