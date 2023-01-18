@@ -2,7 +2,7 @@ import collections
 import os
 import tempfile
 from pathlib import PurePosixPath
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 from urllib.parse import quote
 
 import fsspec
@@ -354,4 +354,3 @@ class HfFile(fsspec.spec.AbstractBufferedFile):
             )
             os.remove(self.temp_file.name)
             self.fs.invalidate_cache()
-
