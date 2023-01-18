@@ -333,7 +333,7 @@ class HfFile(fsspec.spec.AbstractBufferedFile):
         return r.content
 
     def _initiate_upload(self):
-        self.temp_file = tempfile.NamedTemporaryFile(delete=False)
+        self.temp_file = tempfile.NamedTemporaryFile(prefix="hffs-", delete=False)
 
     def _upload_chunk(self, final=False):
         self.buffer.seek(0)
