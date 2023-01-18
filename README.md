@@ -1,6 +1,6 @@
 # `hffs`
 
-`hffs` builds on [`huggingface_hub`](https://github.com/huggingface/huggingface_hub) and [`fsspec`](https://filesystem-spec.readthedocs.io/en/latest/) to provide a convenient Python filesystem interface to 🤗 Hub.
+`hffs` builds on [`huggingface_hub`](https://github.com/huggingface/huggingface_hub) and [`fsspec`](https://github.com/fsspec/filesystem_spec) to provide a convenient Python filesystem interface to 🤗 Hub.
 
 ## Examples
 
