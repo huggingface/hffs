@@ -2,7 +2,7 @@
 
 `hffs` builds on [`huggingface_hub`](https://github.com/huggingface/huggingface_hub) and [`fsspec`](https://github.com/huggingface/huggingface_hub) to provide a convenient Python filesystem interface to 🤗 Hub.
 
-## Examples
+## Basic usage
 
 Locate and read a file from a 🤗 Hub repo:
 
@@ -34,28 +34,28 @@ Instantiation via `fsspec`:
 >>> import fsspec
 
 >>> # Instantiate a `hffs.HfFileSystem` object
->>> fs = fsspec.filesystem("hf://my-username/my-model-repo", repo_type="model")
+>>> fs = fsspec.filesystem("hf://model/my-username/my-model-repo")
 >>> fs.ls("")
 ['.gitattributes', 'config.json', 'pytorch_model.bin']
 
 >>> # Instantiate a `hffs.HfFileSystem` object and write a file to it
->>> with fsspec.open("hf://my-username/my-dataset-repo:/my-file-new.txt", repo_type="dataset"):
+>>> with fsspec.open("hf://dataset/my-username/my-dataset-repo:/my-file-new.txt"):
 ...     f.write("Hello, world1")
 ...     f.write("Hello, world2")
 ```
 
 > **Note**: To be recognized as a `hffs` URL, the URL path passed to [`fsspec.open`](https://filesystem-spec.readthedocs.io/en/latest/api.html?highlight=open#fsspec.open) must adhere to the following scheme:
 > ```
-> hf://<repo_id>[@<revision>]:/<path/in/repo>
+> hf://[<repo_type>/]<repo_id>[@<revision>]:/<path/in/repo>
 > ```
 
-# Installation
+## Installation
 
 ```bash
 pip install hffs
 ```
 
-## Integrations
+## Usage examples
 
 * [`pandas`](https://pandas.pydata.org/pandas-docs/stable/user_guide/io.html#reading-writing-remote-files)/[`dask`](https://docs.dask.org/en/stable/how-to/connect-to-remote-data.html)
 
@@ -63,10 +63,10 @@ pip install hffs
 >>> import pandas as pd
 
 >>> # Read a remote CSV file into a dataframe
->>> df = pd.read_csv("hf://my-username/my-dataset-repo:/train.csv", storage_options={"repo_type": "dataset"})
+>>> df = pd.read_csv("hf://dataset/my-username/my-dataset-repo:/train.csv")
 
 >>> # Write a dataframe to a remote CSV file
->>> df.to_csv("hf://my-username/my-dataset-repo:/test.csv", storage_options={"repo_type": "dataset"})
+>>> df.to_csv("hf://dataset/my-username/my-dataset-repo:/test.csv")
 ```
 
 * [`datasets`](https://huggingface.co/docs/datasets/filesystems#load-and-save-your-datasets-using-your-cloud-storage-filesystem)
@@ -75,8 +75,8 @@ pip install hffs
 >>> import datasets
 
 >>> # Export a (large) dataset to a repo
->>> cache_dir = "hf://my-username/my-dataset-repo"
->>> builder = datasets.load_dataset_builder("path/to/local/loading_script/loading_script.py", cache_dir=cache_dir, storage_options={"repo_type": "dataset"})
+>>> cache_dir = "hf://dataset/my-username/my-dataset-repo"
+>>> builder = datasets.load_dataset_builder("path/to/local/loading_script/loading_script.py", cache_dir=cache_dir)
 >>> builder.download_and_prepare(file_format="parquet")
 
 >>> # Stream the dataset from the repo
@@ -95,12 +95,27 @@ pip install hffs
 >>> embeddings = np.random.randn(50000, 1000).astype("float32")
 
 >>> # Write an array to a repo acting as a remote zarr store
->>> with zarr.open_group("hf://my-username/my-model-repo:/array-store", mode="w", storage_options={"repo_type": "model"}) as root:
+>>> with zarr.open_group("hf://model/my-username/my-model-repo:/array-store", mode="w") as root:
 ...    foo = root.create_group("embeddings")
 ...    foobar = foo.zeros('experiment_0', shape=(50000, 1000), chunks=(10000, 1000), dtype='f4')
 ...    foobar[:] = embeddings
 
 >>> # Read from a remote zarr store
->>> with zarr.open_group("hf://my-username/my-model-repo:/array-store", mode="r", storage_options={"repo_type": "model"}) as root:
+>>> with zarr.open_group("hf://model/my-username/my-model-repo:/array-store", mode="r") as root:
 ...    first_row = root["embeddings/experiment_0"][0]
+```
+
+* [`pyarrow`] + [`duckdb`]
+
+```python
+>>> import hffs
+>>> import pyarrow.dataset as ds
+>>> import duckdb
+
+>>> fs = hffs.HfFileSystem("my-username/my-dataset-repo", repo_type="dataset")
+
+>>> # Query a remote dataset and get the result as a dataframe
+>>> dset = ds.dataset("data/", filesystem=fs)
+>>> con = duckdb.connect()
+>>> df = con.execute("SELECT * FROM dset LIMIT 1-").df()
 ```
