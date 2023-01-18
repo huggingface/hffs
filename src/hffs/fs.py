@@ -355,7 +355,3 @@ class HfFile(fsspec.spec.AbstractBufferedFile):
             os.remove(self.temp_file.name)
             self.fs.invalidate_cache()
 
-
-# parquet issue by severo
-# token
-# docs
