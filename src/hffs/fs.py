@@ -235,8 +235,8 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             token=self.token,
             operations=operations,
             revision=self.revision,
-            commit_message=kwargs.pop("commit_message", commit_message),
-            commit_description=kwargs.pop("commit_description", None),
+            commit_message=kwargs.get("commit_message", commit_message),
+            commit_description=kwargs.get("commit_description", None),
         )
         self.invalidate_cache()
 
@@ -254,8 +254,8 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             token=self.token,
             operations=operations,
             revision=self.revision,
-            commit_message=kwargs.pop("commit_message", commit_message),
-            commit_description=kwargs.pop("commit_description", None),
+            commit_message=kwargs.get("commit_message", commit_message),
+            commit_description=kwargs.get("commit_description", None),
         )
         self.invalidate_cache()
 
@@ -279,8 +279,8 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             headers = huggingface_hub.utils.build_hf_headers(token=self.token, is_write_action=True)
             commit_message = f"Copy {path1} to {path2}"
             payload = {
-                "summary": kwargs.pop("commit_message", commit_message),
-                "description": kwargs.pop("commit_description", ""),
+                "summary": kwargs.get("commit_message", commit_message),
+                "description": kwargs.get("commit_description", ""),
                 "files": [],
                 "lfsFiles": [
                     {
@@ -309,8 +309,8 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 token=self.token,
                 repo_type=self.repo_type,
                 revision=self.revision,
-                commit_message=kwargs.pop("commit_message", commit_message),
-                commit_description=kwargs.pop("commit_description", None),
+                commit_message=kwargs.get("commit_message", commit_message),
+                commit_description=kwargs.get("commit_description"),
             )
         self.invalidate_cache()
 
@@ -349,8 +349,8 @@ class HfFile(fsspec.spec.AbstractBufferedFile):
                 token=self.fs.token,
                 repo_type=self.fs.repo_type,
                 revision=self.fs.revision,
-                commit_message=self.kwargs.pop("commit_message", commit_message),
-                commit_description=self.kwargs.pop("commit_description", None),
+                commit_message=self.kwargs.get("commit_message", commit_message),
+                commit_description=self.kwargs.get("commit_description"),
             )
             os.remove(self.temp_file.name)
             self.fs.invalidate_cache()
