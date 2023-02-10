@@ -11,42 +11,7 @@ import huggingface_hub.constants
 import huggingface_hub.utils
 import requests
 
-
-def _repo_type_and_id_from_hf_id(hf_id: str) -> Tuple[Optional[str], Optional[str], str]:
-    """
-    Returns the repo type and ID from a HF ID
-    Args:
-        hf_id (`str`):
-            An URL or ID of a repository on the HF hub. Accepted values are:
-            - <repo_type>/<namespace>/<repo_id>
-            - <namespace>/<repo_id>
-            - <repo_id>
-    Returns:
-        A tuple with two items: repo_type (`str` or `None`), namespace (`str` or
-        `None`) and repo_id (`str`).
-    """
-    url_segments = hf_id.split("/")
-    is_hf_id = len(url_segments) <= 3
-    if is_hf_id:
-        if len(url_segments) == 3:
-            # Passed <repo_type>/<user>/<model_id> or <repo_type>/<org>/<model_id>
-            repo_type, namespace, repo_id = url_segments[-3:]
-        elif len(url_segments) == 2:
-            # Passed <user>/<model_id> or <org>/<model_id>
-            namespace, repo_id = hf_id.split("/")[-2:]
-            repo_type = None
-        else:
-            # Passed <model_id>
-            repo_id = url_segments[0]
-            namespace, repo_type = None, None
-    else:
-        raise ValueError(f"Unable to retrieve user and repo ID from the passed HF ID: {hf_id}")
-
-    if repo_type not in huggingface_hub.constants.REPO_TYPES:
-        assert repo_type is not None, "repo_type `None` do not have mapping"
-        repo_type = huggingface_hub.constants.REPO_TYPES_MAPPING.get(repo_type)
-
-    return repo_type, namespace, repo_id
+from . import __version__
 
 
 # huggingface_hub.hf_hub_url doesn't support non-default endpoints at the moment
@@ -148,7 +113,9 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         self.token = token if token is not None else huggingface_hub.HfFolder.get_token()
         self.repo_type = repo_type if repo_type is not None else huggingface_hub.constants.REPO_TYPE_MODEL
         self.revision = revision
-        self._api = huggingface_hub.HfApi(endpoint=endpoint, token=token)
+        self._api = huggingface_hub.HfApi(
+            endpoint=endpoint, token=token, library_name="hffs", library_version=__version__
+        )
 
     def _dircache_from_repo_info(self):
         repo_info = self._api.repo_info(
@@ -204,12 +171,11 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             path = path[len(protocol + "://") :]
         hf_id, *paths = path.split(":/", 1)
         hf_id, *revisions = hf_id.split("@", 1)
+        parsed_id = huggingface_hub.RepoUrl(hf_id)
+
         out = {}
-        repo_type, namespace, repo_id = _repo_type_and_id_from_hf_id(hf_id)
-        repo_id = f"{namespace}/{repo_id}" if namespace is not None else repo_id
-        out["repo_id"] = repo_id
-        if repo_type is not None:
-            out["repo_type"] = repo_type
+        out["repo_id"] = parsed_id.repo_id
+        out["repo_type"] = parsed_id.repo_type
         if revisions:
             out["revision"] = revisions[0]
         return out
@@ -276,7 +242,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 
         # TODO: Wait for https://github.com/huggingface/huggingface_hub/issues/1083 to be resolved to simplify this logic
         if self.info(path1)["lfs"] is not None:
-            headers = huggingface_hub.utils.build_hf_headers(token=self.token, is_write_action=True)
+            headers = self._api._build_hf_headers(is_write_action=True)
             commit_message = f"Copy {path1} to {path2}"
             payload = {
                 "summary": kwargs.get("commit_message", commit_message),
@@ -319,7 +285,7 @@ class HfFile(fsspec.spec.AbstractBufferedFile):
     def _fetch_range(self, start, end):
         headers = {
             "range": f"bytes={start}-{end}",
-            **huggingface_hub.utils.build_hf_headers(token=self.fs.token),
+            **self.fs._api._build_hf_headers(),
         }
         url = _path_to_http_url(
             self.path,

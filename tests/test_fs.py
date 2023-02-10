@@ -1,7 +1,9 @@
 import time
 import unittest
+from typing import Dict
 
 import fsspec
+import pytest
 from fsspec.spec import AbstractBufferedFile
 from huggingface_hub import HfApi
 
@@ -147,3 +149,27 @@ class HfFileSystemTests(unittest.TestCase):
         fs, _, _ = fsspec.get_fs_token_paths(f"hf://{self.repo_id}:/data/text_data.txt")
         self.assertEqual(fs.repo_id, self.repo_id)
         self.assertEqual(fs.repo_type, "model")
+
+
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        # Repo type "model" by default
+        ("gpt2", {"repo_id": "gpt2", "repo_type": "model"}),
+        ("hf://gpt2", {"repo_id": "gpt2", "repo_type": "model"}),
+        # Parse without protocol
+        ("datasets/username/my_dataset", {"repo_id": "username/my_dataset", "repo_type": "dataset"}),
+        # Parse with hf:// protocol
+        ("hf://datasets/username/my_dataset", {"repo_id": "username/my_dataset", "repo_type": "dataset"}),
+        # Parse with revision
+        (
+            "hf://datasets/username/my_dataset@0123456789",
+            {"repo_id": "username/my_dataset", "repo_type": "dataset", "revision": "0123456789"},
+        ),
+        # Parse canonical repos (no namespace)
+        ("gpt2", {"repo_id": "gpt2", "repo_type": "model"}),
+        ("hf://gpt2", {"repo_id": "gpt2", "repo_type": "model"}),
+    ],
+)
+def test_parse_hffs_path(path: str, expected: Dict[str, str]) -> None:
+    assert HfFileSystem._get_kwargs_from_urls(path) == expected
