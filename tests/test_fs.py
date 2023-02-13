@@ -166,10 +166,13 @@ class HfFileSystemTests(unittest.TestCase):
             "hf://datasets/username/my_dataset@0123456789",
             {"repo_id": "username/my_dataset", "repo_type": "dataset", "revision": "0123456789"},
         ),
-        # Parse canonical repos (no namespace)
+        # Parse canonical models (no namespace)
         ("gpt2", {"repo_id": "gpt2", "repo_type": "model"}),
         ("hf://gpt2", {"repo_id": "gpt2", "repo_type": "model"}),
+        # Canonical datasets are not parsed correctly by huggingface_hub yet. They are processed separately by hffs.
+        ("datasets/squad", {"repo_id": "squad", "repo_type": "dataset"}),
+        ("hf://datasets/squad", {"repo_id": "squad", "repo_type": "dataset"}),
     ],
 )
-def test_parse_hffs_path(path: str, expected: Dict[str, str]) -> None:
+def test_parse_hffs_path_success(path: str, expected: Dict[str, str]) -> None:
     assert HfFileSystem._get_kwargs_from_urls(path) == expected

@@ -1,8 +1,9 @@
 import collections
 import os
+import re
 import tempfile
 from pathlib import PurePosixPath
-from typing import Optional, Tuple
+from typing import Optional
 from urllib.parse import quote
 
 import fsspec
@@ -178,6 +179,14 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         out["repo_type"] = parsed_id.repo_type
         if revisions:
             out["revision"] = revisions[0]
+
+        # Corner case: canonical datasets URLs are not parsed correctly by `huggingface_hub`
+        # TODO: remove this once https://github.com/huggingface/huggingface_hub/issues/1336 is fixed.
+        if out["repo_type"] == "model":
+            match = re.match(r"datasets?/(?P<repo_id>.*)", out["repo_id"])
+            if match is not None:
+                out["repo_type"], out["repo_id"] = "dataset", match.groupdict()["repo_id"]
+
         return out
 
     def _open(
