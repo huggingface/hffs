@@ -1,7 +1,7 @@
 import collections
 import os
-import re
 import platform
+import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
@@ -15,10 +15,11 @@ import huggingface_hub.utils
 import requests
 from packaging import version
 
+from . import __version__
+
 
 PY_VERSION = version.parse(platform.python_version())
-
-from . import __version__
+HFH_VERSION = version.parse(huggingface_hub.__version__)
 
 
 # huggingface_hub.hf_hub_url doesn't support non-default endpoints at the moment
@@ -186,9 +187,8 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         if revisions:
             out["revision"] = revisions[0]
 
-        # Corner case: canonical datasets URLs are not parsed correctly by `huggingface_hub`
-        # TODO: remove this once https://github.com/huggingface/huggingface_hub/issues/1336 is fixed.
-        if out["repo_type"] == "model":
+        # Corner case for `huggingface_hub<=0.13.0`: canonical datasets URLs are not parsed correctly by `huggingface_hub`
+        if HFH_VERSION < version.parse("0.13.0") and out["repo_type"] == "model":
             match = re.match(r"datasets?/(?P<repo_id>.*)", out["repo_id"])
             if match is not None:
                 out["repo_type"], out["repo_id"] = "dataset", match.groupdict()["repo_id"]
@@ -257,7 +257,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 
         # TODO: Wait for https://github.com/huggingface/huggingface_hub/issues/1083 to be resolved to simplify this logic
         if self.info(path1)["lfs"] is not None:
-            headers = self._api._build_hf_headers(is_write_action=True)
+            self._api._build_hf_headers(is_write_action=True)
             commit_message = f"Copy {path1} to {path2}"
             payload = {
                 "summary": kwargs.get("commit_message", commit_message),
@@ -272,8 +272,9 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 ],
                 "deletedFiles": [],
             }
+            revision = self.revision if self.revision is not None else huggingface_hub.constants.DEFAULT_REVISION
             r = requests.post(
-                f"{self.endpoint}/api/{self.repo_type}s/{self.repo_id}/commit/{quote(self.revision, safe='')}",
+                f"{self.endpoint}/api/{self.repo_type}s/{self.repo_id}/commit/{quote(revision, safe='')}",
                 json=payload,
                 headers=huggingface_hub.utils.build_hf_headers(token=self.token, is_write_action=True),
             )
@@ -298,8 +299,9 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         path = self._strip_protocol(path)
         if not self.exists(path) or not self.isfile(path):
             raise FileNotFoundError(path)
+        revision = self.revision if self.revision is not None else huggingface_hub.constants.DEFAULT_REVISION
         r = requests.get(
-            f"{self.endpoint}/api/{self.repo_type}s/{self.repo_id}/tree/{quote(self.revision, safe='')}/{quote(self._parent(path), safe='')}"
+            f"{self.endpoint}/api/{self.repo_type}s/{self.repo_id}/tree/{quote(revision, safe='')}/{quote(self._parent(path), safe='')}"
             .rstrip("/"),
             headers=huggingface_hub.utils.build_hf_headers(token=self.token),
         )

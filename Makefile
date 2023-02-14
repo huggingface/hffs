@@ -6,14 +6,13 @@ check_dirs := tests src setup.py
 
 quality:
 	black --check $(check_dirs)
-	isort --check-only $(check_dirs)
-	flake8 $(check_dirs)
+	ruff $(check_dirs)
 
 # Format source code automatically
 
 style:
 	black $(check_dirs)
-	isort $(check_dirs)
+	ruff $(check_dirs) --fix
 
 # Run tests for the library
 

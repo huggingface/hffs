@@ -113,7 +113,7 @@ TESTS_REQUIRE = [
 ]
 
 
-QUALITY_REQUIRE = ["black~=22.0", "flake8>=3.8.3", "isort>=5.0.0"]
+QUALITY_REQUIRE = ["black~=23.1", "ruff>=0.0.241"]
 
 
 EXTRAS_REQUIRE = {
