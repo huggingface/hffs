@@ -103,7 +103,7 @@ from setuptools import find_packages, setup
 REQUIRED_PKGS = [
     "fsspec",
     "requests",
-    "huggingface_hub>=0.10.0",
+    "huggingface_hub>=0.12.0",
 ]
 
 
