@@ -135,7 +135,6 @@ setup(
     license="Apache 2.0",
     package_dir={"": "src"},
     packages=find_packages("src"),
-    package_data={"hffs": ["py.typed"]},
     python_requires=">=3.7.0",
     install_requires=REQUIRED_PKGS,
     extras_require=EXTRAS_REQUIRE,
