@@ -1,3 +1,4 @@
+import datetime
 import time
 import unittest
 from typing import Dict
@@ -128,6 +129,16 @@ class HfFileSystemTests(unittest.TestCase):
         with hffs.open("data/binary_data_copy.bin", "rb") as f:
             self.assertEqual(f.read(), b"dummy binary data")
         self.assertIsNotNone(hffs.info("data/binary_data_copy.bin")["lfs"])
+
+    def test_modified_time(self):
+        hffs = HfFileSystem(self.repo_id, endpoint=self._endpoint, token=self._token, repo_type=self.repo_type)
+        self.assertIsInstance(hffs.modified("data/text_data.txt"), datetime.datetime)
+        # should fail on a non-existing file/directory
+        with self.assertRaises(FileNotFoundError):
+            hffs.modified("data/not_existing_file.txt")
+        # should fail on a directory
+        with self.assertRaises(FileNotFoundError):
+            hffs.modified("data")
 
     def test_initialize_from_fsspec(self):
         fs, _, paths = fsspec.get_fs_token_paths(

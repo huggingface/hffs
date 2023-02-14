@@ -1,7 +1,9 @@
 import collections
 import os
 import re
+import platform
 import tempfile
+from datetime import datetime, timezone
 from pathlib import PurePosixPath
 from typing import Optional
 from urllib.parse import quote
@@ -11,6 +13,10 @@ import huggingface_hub
 import huggingface_hub.constants
 import huggingface_hub.utils
 import requests
+from packaging import version
+
+
+PY_VERSION = version.parse(platform.python_version())
 
 from . import __version__
 
@@ -266,11 +272,10 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 ],
                 "deletedFiles": [],
             }
-            revision = self.revision if self.revision is not None else huggingface_hub.constants.DEFAULT_REVISION
             r = requests.post(
-                f"{self.endpoint}/api/{self.repo_type}s/{self.repo_id}/commit/{quote(revision, safe='')}",
+                f"{self.endpoint}/api/{self.repo_type}s/{self.repo_id}/commit/{quote(self.revision, safe='')}",
                 json=payload,
-                headers=headers,
+                headers=huggingface_hub.utils.build_hf_headers(token=self.token, is_write_action=True),
             )
             huggingface_hub.utils.hf_raise_for_status(r)
         else:
@@ -288,6 +293,27 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 commit_description=kwargs.get("commit_description"),
             )
         self.invalidate_cache()
+
+    def modified(self, path):
+        path = self._strip_protocol(path)
+        if not self.exists(path) or not self.isfile(path):
+            raise FileNotFoundError(path)
+        r = requests.get(
+            f"{self.endpoint}/api/{self.repo_type}s/{self.repo_id}/tree/{quote(self.revision, safe='')}/{quote(self._parent(path), safe='')}"
+            .rstrip("/"),
+            headers=huggingface_hub.utils.build_hf_headers(token=self.token),
+        )
+        huggingface_hub.utils.hf_raise_for_status(r)
+        modified_date = None
+        for item in r.json()["items"]:
+            if item["type"] == "file" and item["path"] == path:
+                if PY_VERSION >= version.parse("3.11"):
+                    modified_date = datetime.fromisoformat(item["lastCommit"]["author"]["date"])
+                else:
+                    modified_date = datetime.fromisoformat(item["lastCommit"]["author"]["date"].rstrip("Z"))
+                    modified_date = modified_date.replace(tzinfo=timezone.utc)
+                break
+        return modified_date
 
 
 class HfFile(fsspec.spec.AbstractBufferedFile):
