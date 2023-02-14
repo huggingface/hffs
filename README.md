@@ -105,17 +105,14 @@ pip install hffs
 ...    first_row = root["embeddings/experiment_0"][0]
 ```
 
-* [`pyarrow`] + [`duckdb`]
+* [`duckdb`](https://duckdb.org/docs/guides/python/filesystems)
 
 ```python
 >>> import hffs
->>> import pyarrow.dataset as ds
 >>> import duckdb
 
 >>> fs = hffs.HfFileSystem("my-username/my-dataset-repo", repo_type="dataset")
-
->>> # Query a remote dataset and get the result as a dataframe
->>> dset = ds.dataset("data/", filesystem=fs)
->>> con = duckdb.connect()
->>> df = con.execute("SELECT * FROM dset LIMIT 1-").df()
+>>> duckdb.register_filesystem(fs)
+>>> # Query a remote file and get the result as a dataframe
+>>> df = duckdb.query("SELECT * FROM 'hf://data.parquet' LIMIT 10").df()
 ```
