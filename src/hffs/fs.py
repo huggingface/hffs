@@ -303,11 +303,12 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         path = self._strip_protocol(path)
         if not self.isfile(path):
             raise FileNotFoundError(path)
+        headers = self._api._build_hf_headers()
         revision = self.revision if self.revision is not None else huggingface_hub.constants.DEFAULT_REVISION
         r = requests.get(
             f"{self.endpoint}/api/{self.repo_type}s/{self.repo_id}/tree/{quote(revision, safe='')}/{quote(self._parent(path), safe='')}"
             .rstrip("/"),
-            headers=huggingface_hub.utils.build_hf_headers(token=self.token),
+            headers=headers,
         )
         huggingface_hub.utils.hf_raise_for_status(r)
         modified_date = None

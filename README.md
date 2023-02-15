@@ -39,7 +39,7 @@ Instantiation via `fsspec`:
 ['.gitattributes', 'config.json', 'pytorch_model.bin']
 
 >>> # Instantiate a `hffs.HfFileSystem` object and write a file to it
->>> with fsspec.open("hf://dataset/my-username/my-dataset-repo:/my-file-new.txt"):
+>>> with fsspec.open("hf://datasets/my-username/my-dataset-repo:/my-file-new.txt"):
 ...     f.write("Hello, world1")
 ...     f.write("Hello, world2")
 ```
@@ -63,10 +63,10 @@ pip install hffs
 >>> import pandas as pd
 
 >>> # Read a remote CSV file into a dataframe
->>> df = pd.read_csv("hf://dataset/my-username/my-dataset-repo:/train.csv")
+>>> df = pd.read_csv("hf://datasets/my-username/my-dataset-repo:/train.csv")
 
 >>> # Write a dataframe to a remote CSV file
->>> df.to_csv("hf://dataset/my-username/my-dataset-repo:/test.csv")
+>>> df.to_csv("hf://datasets/my-username/my-dataset-repo:/test.csv")
 ```
 
 * [`datasets`](https://huggingface.co/docs/datasets/filesystems#load-and-save-your-datasets-using-your-cloud-storage-filesystem)
