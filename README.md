@@ -34,7 +34,7 @@ Instantiation via `fsspec`:
 >>> import fsspec
 
 >>> # Instantiate a `hffs.HfFileSystem` object
->>> fs = fsspec.filesystem("hf://model/my-username/my-model-repo")
+>>> fs = fsspec.filesystem("hf://my-username/my-model-repo")
 >>> fs.ls("")
 ['.gitattributes', 'config.json', 'pytorch_model.bin']
 
