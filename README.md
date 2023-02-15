@@ -75,7 +75,7 @@ pip install hffs
 >>> import datasets
 
 >>> # Export a (large) dataset to a repo
->>> cache_dir = "hf://dataset/my-username/my-dataset-repo"
+>>> cache_dir = "hf://datasets/my-username/my-dataset-repo"
 >>> builder = datasets.load_dataset_builder("path/to/local/loading_script/loading_script.py", cache_dir=cache_dir)
 >>> builder.download_and_prepare(file_format="parquet")
 
@@ -95,13 +95,13 @@ pip install hffs
 >>> embeddings = np.random.randn(50000, 1000).astype("float32")
 
 >>> # Write an array to a repo acting as a remote zarr store
->>> with zarr.open_group("hf://model/my-username/my-model-repo:/array-store", mode="w") as root:
+>>> with zarr.open_group("hf://my-username/my-model-repo:/array-store", mode="w") as root:
 ...    foo = root.create_group("embeddings")
 ...    foobar = foo.zeros('experiment_0', shape=(50000, 1000), chunks=(10000, 1000), dtype='f4')
 ...    foobar[:] = embeddings
 
 >>> # Read from a remote zarr store
->>> with zarr.open_group("hf://model/my-username/my-model-repo:/array-store", mode="r") as root:
+>>> with zarr.open_group("hf://my-username/my-model-repo:/array-store", mode="r") as root:
 ...    first_row = root["embeddings/experiment_0"][0]
 ```
 

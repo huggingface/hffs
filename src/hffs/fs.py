@@ -89,11 +89,11 @@ class HfFileSystem(fsspec.AbstractFileSystem):
     >>> import fsspec
 
     >>> # Read a remote file
-    >>> with fsspec.open("hf://dataset/my-username/my-dataset:/remote/file/in/repo.bin") as f:
+    >>> with fsspec.open("hf://datasets/my-username/my-dataset:/remote/file/in/repo.bin") as f:
     ...     data = f.read()
 
     >>> # Write a remote file
-    >>> with fsspec.open("hf://dataset/my-username/my-dataset:/remote/file/in/repo.bin", "wb") as f:
+    >>> with fsspec.open("hf://datasets/my-username/my-dataset:/remote/file/in/repo.bin", "wb") as f:
     ...     f.write(data)
     ```
     """
@@ -173,7 +173,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 
     def unstrip_protocol(self, path):
         return super().unstrip_protocol(
-            f"{self.repo_type}/{self.repo_id}{'@' + self.revision if self.revision is not None else ''}:/{path}"
+            f"{self.repo_type}s/{self.repo_id}{'@' + self.revision if self.revision is not None else ''}:/{path}"
         )
 
     @staticmethod
@@ -221,7 +221,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             operations=operations,
             revision=self.revision,
             commit_message=kwargs.get("commit_message", commit_message),
-            commit_description=kwargs.get("commit_description", None),
+            commit_description=kwargs.get("commit_description"),
         )
         self.invalidate_cache()
 
@@ -240,7 +240,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             operations=operations,
             revision=self.revision,
             commit_message=kwargs.get("commit_message", commit_message),
-            commit_description=kwargs.get("commit_description", None),
+            commit_description=kwargs.get("commit_description"),
         )
         self.invalidate_cache()
 
@@ -261,7 +261,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 
         # TODO: Wait for https://github.com/huggingface/huggingface_hub/issues/1083 to be resolved to simplify this logic
         if self.info(path1)["lfs"] is not None:
-            self._api._build_hf_headers(is_write_action=True)
+            headers = self._api._build_hf_headers(is_write_action=True)
             commit_message = f"Copy {path1} to {path2}"
             payload = {
                 "summary": kwargs.get("commit_message", commit_message),
@@ -280,7 +280,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             r = requests.post(
                 f"{self.endpoint}/api/{self.repo_type}s/{self.repo_id}/commit/{quote(revision, safe='')}",
                 json=payload,
-                headers=huggingface_hub.utils.build_hf_headers(token=self.token, is_write_action=True),
+                headers=headers,
             )
             huggingface_hub.utils.hf_raise_for_status(r)
         else:
