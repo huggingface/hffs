@@ -1,7 +1,10 @@
+import datetime
 import time
 import unittest
+from typing import Dict
 
 import fsspec
+import pytest
 from fsspec.spec import AbstractBufferedFile
 from huggingface_hub import HfApi
 
@@ -127,13 +130,22 @@ class HfFileSystemTests(unittest.TestCase):
             self.assertEqual(f.read(), b"dummy binary data")
         self.assertIsNotNone(hffs.info("data/binary_data_copy.bin")["lfs"])
 
+    def test_modified_time(self):
+        hffs = HfFileSystem(self.repo_id, endpoint=self._endpoint, token=self._token, repo_type=self.repo_type)
+        self.assertIsInstance(hffs.modified("data/text_data.txt"), datetime.datetime)
+        # should fail on a non-existing file/directory
+        with self.assertRaises(FileNotFoundError):
+            hffs.modified("data/not_existing_file.txt")
+        # should fail on a directory
+        with self.assertRaises(FileNotFoundError):
+            hffs.modified("data")
+
     def test_initialize_from_fsspec(self):
         fs, _, paths = fsspec.get_fs_token_paths(
-            f"hf://{self.repo_id}:/data/text_data.txt",
+            f"hf://{self.repo_type}/{self.repo_id}:/data/text_data.txt",
             storage_options={
                 "endpoint": self._endpoint,
                 "token": self._token,
-                "repo_type": self.repo_type,
                 "revision": "test-branch",
             },
         )
@@ -144,3 +156,34 @@ class HfFileSystemTests(unittest.TestCase):
         self.assertEqual(fs.repo_type, self.repo_type)
         self.assertEqual(fs.revision, "test-branch")
         self.assertEqual(paths, ["data/text_data.txt"])
+
+        fs, _, _ = fsspec.get_fs_token_paths(f"hf://{self.repo_id}:/data/text_data.txt")
+        self.assertEqual(fs.repo_id, self.repo_id)
+        self.assertEqual(fs.repo_type, "model")
+
+
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        # Repo type "model" by default
+        ("gpt2", {"repo_id": "gpt2", "repo_type": "model"}),
+        ("hf://gpt2", {"repo_id": "gpt2", "repo_type": "model"}),
+        # Parse without protocol
+        ("datasets/username/my_dataset", {"repo_id": "username/my_dataset", "repo_type": "dataset"}),
+        # Parse with hf:// protocol
+        ("hf://datasets/username/my_dataset", {"repo_id": "username/my_dataset", "repo_type": "dataset"}),
+        # Parse with revision
+        (
+            "hf://datasets/username/my_dataset@0123456789",
+            {"repo_id": "username/my_dataset", "repo_type": "dataset", "revision": "0123456789"},
+        ),
+        # Parse canonical models (no namespace)
+        ("gpt2", {"repo_id": "gpt2", "repo_type": "model"}),
+        ("hf://gpt2", {"repo_id": "gpt2", "repo_type": "model"}),
+        # Canonical datasets are not parsed correctly by huggingface_hub yet. They are processed separately by hffs.
+        ("datasets/squad", {"repo_id": "squad", "repo_type": "dataset"}),
+        ("hf://datasets/squad", {"repo_id": "squad", "repo_type": "dataset"}),
+    ],
+)
+def test_parse_hffs_path_success(path: str, expected: Dict[str, str]) -> None:
+    assert HfFileSystem._get_kwargs_from_urls(path) == expected

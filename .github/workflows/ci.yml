@@ -25,8 +25,7 @@ jobs:
       - name: Check quality
         run: |
           black --check tests src
-          isort --check-only tests src
-          flake8 tests src
+          ruff tests src
 
   test:
     needs: check_code_quality
