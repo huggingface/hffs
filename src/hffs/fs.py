@@ -67,9 +67,9 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             An optional Git revision id which can be a branch name, a tag, or a
             commit hash. Defaults to the head of the `"main"` branch.
 
-    Direct usage:
+    Direct instantiation:
 
-    ```python
+    ```py
     >>> import hffs
 
     >>> fs = hffs.HfFileSystem("username/my-dataset", repo_type="dataset")
@@ -83,9 +83,9 @@ class HfFileSystem(fsspec.AbstractFileSystem):
     ...     f.write(data)
     ```
 
-    Usage via [`fsspec`](https://filesystem-spec.readthedocs.io/en/latest/)):
+    Instantiation via [`fsspec`](https://filesystem-spec.readthedocs.io/en/latest/):
 
-    ```python
+    ```py
     >>> import fsspec
 
     >>> # Read a remote file
