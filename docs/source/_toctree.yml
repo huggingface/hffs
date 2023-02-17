@@ -1,0 +1,6 @@
+- title: Get Started
+  sections:
+  - local: index
+    title: 🤗 Filesystem
+  - local: integration_zoo
+    title: Integration Zoo
