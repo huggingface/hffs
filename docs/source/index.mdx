@@ -1,6 +1,6 @@
 # Filesystem
 
-🤗 Filesystem is a package that provides a pythonic [fsspec-compatible](https://filesystem-spec.readthedocs.io/en/latest/) file interface to the [Hugging Face Hub](https://huggingface.co/). It builds on top of the [Hugging Face Hub client library](https://huggingface.co/docs/huggingface_hub/index) to read, write, and store files on the Hub.
+🤗 Filesystem is a package that provides a pythonic [fsspec-compatible](https://filesystem-spec.readthedocs.io/en/latest/) file interface to the [Hugging Face Hub](https://huggingface.co/). It builds on top of the [Hugging Face Hub client library](https://huggingface.co/docs/huggingface_hub/index) to read and write files and inspect repositories on the Hub.
 
 ## Installation
 
@@ -41,7 +41,7 @@ If not explicitly provided, the `repo_type` argument defaults to `model`. Beside
 
 The optional `revision` argument can be passed to open a filesystem from a specific commit (any revision such as a branch or a tag name or a commit hash).
 
-Unlike Python's built-in `open`, `fsspec`'s `open` defaults to binary mode, `"rb"`. This means you must explicitly set encoding as `"rw"` for reading and writing in text mode.
+Unlike Python's built-in `open`, `fsspec`'s `open` defaults to binary mode, `"rb"`. This means you must explicitly set encoding as `"r"` for reading and `"w"` for writing in text mode.
 
 ## Integration
 
