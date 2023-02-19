@@ -1,6 +1,6 @@
 # Filesystem
 
-🤗 Filesystem is a package that provides a pythonic file interface ([fsspec-compatible](https://filesystem-spec.readthedocs.io/en/latest/)) to the [Hugging Face Hub](https://huggingface.co/). It builds on top of [Hugging Face Hub client library](https://huggingface.co/docs/huggingface_hub/index) to interact with the Hub.
+🤗 Filesystem is a package that provides a pythonic [fsspec-compatible](https://filesystem-spec.readthedocs.io/en/latest/) file interface to the [Hugging Face Hub](https://huggingface.co/). It builds on top of the [Hugging Face Hub client library](https://huggingface.co/docs/huggingface_hub/index) to read, write, and store files on the Hub.
 
 ## Installation
 
@@ -10,7 +10,7 @@ pip install hffs
 
 ## Usage
 
-`HfFileSystem` is the cental class of the library that holds connection information and allows typical filesystem style operations like `cp`, `mv`, `ls`, `du`, `glob`, `get_file`, `put_file` etc.
+`HfFileSystem` is the library's main class that holds connection information and enables typical filesystem style operations like `cp`, `mv`, `ls`, `du`, `glob`, `get_file`, `put_file` etc.
 
 ```python
 >>> from hffs import HfFileSystem
@@ -41,19 +41,19 @@ If not explicitly provided, the `repo_type` argument defaults to `model`. Beside
 
 The optional `revision` argument can be passed to open a filesystem from a specific commit (any revision such as a branch or a tag name or a commit hash).
 
-Note that, unlike the built-in `open`, the mode in `fsspec`'s `open` defaults to binary mode, i.e. "rb". This means you must explicitly set encoding as "r"/"w" in case of text mode.
+Unlike Python's built-in `open`, `fsspec`'s `open` defaults to binary mode, `"rb"`. This means you must explicitly set encoding as `"rw"` for reading and writing in text mode.
 
 ## Integration
 
-To use 🤗 Filesystem with a library that accepts `fsspec`'s URLs, the URL must be of the following structure:
+🤗 Filesystem can be used with any library that integrates `fsspec`, and the URL has the following structure:
 
 ```
 hf://[<repo_type>/]<repo_id>[@<revision>]:/<path/in/repo>
 ```
 
-The `repo_type` and `revision` parameters are optional. Most integrations also make it possible to pass optional parameters to the filesystem's initializer as `storage_options`, a dictionary mapping parameter names to their values.
+The `repo_type` and `revision` parameters are optional. Most integrations also allow you to pass optional parameters to the filesystem's initializer as `storage_options`, a dictionary mapping parameter names to their values.
 
-Before passing a URL to integration, you can use `fsspec.get_fs_token_paths` to ensure the URL initializes a filesystem as expected:
+Before passing a URL to an integration, you can use `fsspec.get_fs_token_paths` to ensure the URL initializes a filesystem as expected:
 
 ```python
 >>> import fsspec
@@ -71,8 +71,9 @@ Before passing a URL to integration, you can use `fsspec.get_fs_token_paths` to 
 
 ## Authentication
 
-In many cases, you must be logged in with a Hugging Face account to interact with the Hub. Refer to the [Login](https://huggingface.co/docs/huggingface_hub/quick-start#login) section of the Hugging Face Hub client library documentation to learn about the ways to authenticate on the Hub. It is also possible to log in programmatically by passing your `token` as an argument to `HfFileSystem`. If you do so, be careful when
-sharing your source code to avoid accidentally leaking the token.
+In many cases, you must be logged in with a Hugging Face account to interact with the Hub. Refer to the [Login](https://huggingface.co/docs/huggingface_hub/quick-start#login) section of the Hugging Face Hub client library documentation to learn about authentication methods on the Hub. 
+
+It is also possible to login programmatically by passing your `token` as an argument to `HfFileSystem`. If you login this way, be careful not to accidentally leak the token when sharing your source code!
 
 ## API Reference
 
