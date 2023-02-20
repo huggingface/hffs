@@ -14,7 +14,7 @@ pip install hffs
 
 ```python
 >>> from hffs import HfFileSystem
->>> fs = HfFileSystem("my-username/my-dataset-repo", repo_type="dataset")
+>>> fs = HfFileSystem("my-username/my-dataset-repo", repo_type="dataset", revision="main")
 
 >>> # List files in a directory
 >>> fs.ls("data")
