@@ -1,8 +1,8 @@
 import datetime
-import time
 import unittest
 from typing import Dict
 from uuid import uuid4
+
 import fsspec
 import pytest
 from fsspec.spec import AbstractBufferedFile
