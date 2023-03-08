@@ -26,7 +26,7 @@ class HfFileSystemTests(unittest.TestCase):
         self.repo_id = f"{USER}/hffs-test-repo-{uuid4()}"
         self.repo_type = "dataset"
         self.hffs = HfFileSystem(self.repo_id, endpoint=ENDPOINT_STAGING, token=TOKEN, repo_type=self.repo_type)
-        self.api = self._fs._api
+        self.api = self.hffs._api
 
         # Create dumb repo
         self.api.create_repo(self.repo_id, repo_type=self.repo_type, private=True)
