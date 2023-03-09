@@ -306,21 +306,19 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         headers = self._api._build_hf_headers()
         revision = self.revision if self.revision is not None else huggingface_hub.constants.DEFAULT_REVISION
 
-        modified_date = None
-        for item in huggingface_hub.hf_api.paginate(
-            f"{self.endpoint}/api/{self.repo_type}s/{self.repo_id}/tree/{quote(revision, safe='')}/{quote(self._parent(path), safe='')}"
-            .rstrip("/"),
-            params={},
+        response = requests.post(
+            f"{self.endpoint}/api/{self.repo_type}s/{self.repo_id}/paths-info/{quote(revision, safe='')}",
             headers=headers,
-        ):
-            if item["type"] == "file" and item["path"] == path:
-                if PY_VERSION >= version.parse("3.11"):
-                    modified_date = datetime.fromisoformat(item["lastCommit"]["author"]["date"])
-                else:
-                    modified_date = datetime.fromisoformat(item["lastCommit"]["author"]["date"].rstrip("Z"))
-                    modified_date = modified_date.replace(tzinfo=timezone.utc)
-                break
-        return modified_date
+            data={"paths": [path], "expand": True},
+        )
+        huggingface_hub.utils.hf_raise_for_status(response)
+        item = response.json()[0]
+
+        return (
+            datetime.fromisoformat(item["lastCommit"]["date"])
+            if PY_VERSION >= version.parse("3.11")
+            else datetime.fromisoformat(item["lastCommit"]["date"].rstrip("Z")).replace(tzinfo=timezone.utc)
+        )
 
 
 class HfFile(fsspec.spec.AbstractBufferedFile):
