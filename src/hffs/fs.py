@@ -244,7 +244,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         )
         self.invalidate_cache()
 
-    def ls(self, path, detail=False, **kwargs):
+    def ls(self, path, detail=True, **kwargs):
         path = self._strip_protocol(path)
         if not self.dircache:
             self._dircache_from_repo_info()
