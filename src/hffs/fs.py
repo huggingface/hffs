@@ -307,9 +307,10 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         revision = self.revision if self.revision is not None else huggingface_hub.constants.DEFAULT_REVISION
 
         modified_date = None
-        for item in huggingface_hub.utils._pagination.paginate(
+        for item in huggingface_hub.hf_api.paginate(
             f"{self.endpoint}/api/{self.repo_type}s/{self.repo_id}/tree/{quote(revision, safe='')}/{quote(self._parent(path), safe='')}"
             .rstrip("/"),
+            params={},
             headers=headers,
         ):
             if item["type"] == "file" and item["path"] == path:
