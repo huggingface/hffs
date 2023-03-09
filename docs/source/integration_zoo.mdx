@@ -25,7 +25,8 @@ Below is a (non-exhaustive) list of usage examples showcasing 🤗 Filesystem's 
   >>> fs = HfFileSystem("my-username/my-dataset-repo", repo_type="dataset")
   >>> duckdb.register_filesystem(fs)
   >>> # Query a remote file and get the result back as a dataframe
-  >>> df = duckdb.query("SELECT * FROM 'hf://data_dir/data.parquet' LIMIT 10").df()
+  >>> fs_query_file = "data_dir/data.parquet"
+  >>> df = duckdb.query(f"SELECT * FROM '{fs.unstrip_protocol(fs_query_file)}' LIMIT 10").df()
   ```
 
 * Using 🤗 Hub as an array store with [Zarr](https://zarr.readthedocs.io/en/stable/tutorial.html#io-with-fsspec):

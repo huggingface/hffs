@@ -165,10 +165,6 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             path = path[len(protocol + "://") :]
             hf_id, *paths = path.split(":/", 1)
             path = paths[0] if paths else cls.root_marker
-        # TODO: the hack below is needed to work with DuckDB, remove it as soon as it is fixed on their side
-        if path.startswith(("dataset", "model", "space")) and ":/" in path:
-            hf_id, *paths = path.split(":/", 1)
-            path = paths[0] if paths else cls.root_marker
         return path
 
     def unstrip_protocol(self, path):
