@@ -4,7 +4,7 @@ import platform
 import tempfile
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
-from typing import Optional
+from typing import Optional, Tuple
 from urllib.parse import quote
 
 import fsspec
@@ -113,7 +113,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             endpoint=endpoint, token=token, library_name="hffs", library_version=__version__
         )
 
-    def _resolve_repo_id(self, path: str) -> tuple[str, str, str]:
+    def _resolve_repo_id(self, path: str) -> Tuple[str, str, str]:
         path = self._strip_protocol(path)
         if path.split("/")[0] in huggingface_hub.constants.REPO_TYPES_MAPPING:
             if "/" not in path:
