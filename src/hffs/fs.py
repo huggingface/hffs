@@ -87,9 +87,9 @@ class HfFileSystem(fsspec.AbstractFileSystem):
     >>> import fsspec
 
     >>> # Read/write files
-    >>> with fsspec.open("hf://my-username/my-model/model.bin") as f:
+    >>> with fsspec.open("hf://my-username/my-model/pytorch_model.bin") as f:
     ...     data = f.read()
-    >>> with fsspec.open("hf://my-username/my-model/model.bin", "wb") as f:
+    >>> with fsspec.open("hf://my-username/my-model/pytorch_model.bin", "wb") as f:
     ...     f.write(data)
     ```
     """
