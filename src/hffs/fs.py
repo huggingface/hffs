@@ -61,33 +61,23 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 
     Direct usage:
 
+    Models:
+
     ```python
     >>> import hffs
 
     >>> fs = hffs.HfFileSystem()
 
-    >>> # Read a remote model file
-    >>> with fs.open("my-username/my-model/model.bin") as f:
+    >>> # List files
+    >>> fs.glob("my-username/my-model/*.bin")
+    ["pytorch_model.bin"]
+    >>> fs.ls("datasets/my-username/my-dataset", detail=false)
+    ['.gitattributes', 'README.md', 'data.json']
+
+    >>> # Read/write files
+    >>> with fs.open("my-username/my-model/pytorch_model.bin") as f:
     ...     data = f.read()
-
-    >>> # Write a remote model file
-    >>> with fs.open("my-username/my-model/model.bin", "wb") as f:
-    ...     f.write(data)
-
-    >>> # Read a remote dataset file
-    >>> with fs.open("datasets/my-username/my-dataset/data.json", "r") as f:
-    ...     data = f.read()
-
-    >>> # Write a remote dataset file
-    >>> with fs.open("datasets/my-username/my-dataset/data.json", "w") as f:
-    ...     f.write(data)
-
-    >>> # Read a remote space file
-    >>> with fs.open("spaces/my-username/my-space/app.py", "r") as f:
-    ...     data = f.read()
-
-    >>> # Write a remote space file
-    >>> with fs.open("spaces/my-username/my-space/app.py", "w") as f:
+    >>> with fs.open("my-username/my-model/pytorch_model.bin", "wb") as f:
     ...     f.write(data)
     ```
 
@@ -96,11 +86,9 @@ class HfFileSystem(fsspec.AbstractFileSystem):
     ```python
     >>> import fsspec
 
-    >>> # Read a remote file
+    >>> # Read/write files
     >>> with fsspec.open("hf://my-username/my-model/model.bin") as f:
     ...     data = f.read()
-
-    >>> # Write a remote file
     >>> with fsspec.open("hf://my-username/my-model/model.bin", "wb") as f:
     ...     f.write(data)
     ```
