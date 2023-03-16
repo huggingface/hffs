@@ -71,7 +71,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
     >>> # List files
     >>> fs.glob("my-username/my-model/*.bin")
     ["pytorch_model.bin"]
-    >>> fs.ls("datasets/my-username/my-dataset", detail=false)
+    >>> fs.ls("datasets/my-username/my-dataset", detail=False)
     ['.gitattributes', 'README.md', 'data.json']
 
     >>> # Read/write files
