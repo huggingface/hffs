@@ -122,7 +122,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 self._api.repo_info(repo_id, repo_type=repo_type)
                 self._repository_type_and_id_exists_cache[(repo_type, repo_id)] = True
                 return True
-            except huggingface_hub.utils.RepositoryNotFoundError:
+            except (huggingface_hub.utils.RepositoryNotFoundError, huggingface_hub.utils.HFValidationError):
                 self._repository_type_and_id_exists_cache[(repo_type, repo_id)] = False
                 return False
 
@@ -345,7 +345,7 @@ class HfFile(fsspec.spec.AbstractBufferedFile):
 
     def _fetch_range(self, start, end):
         headers = {
-            "range": f"bytes={start}-{end}",
+            "range": f"bytes={start}-{end - 1}",
             **self.fs._api._build_hf_headers(),
         }
         url = _path_to_http_url(
