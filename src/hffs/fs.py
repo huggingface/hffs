@@ -193,7 +193,8 @@ class HfFileSystem(fsspec.AbstractFileSystem):
     def invalidate_cache(self, path=None):
         # TODO: use `path` to optimize cache invalidation -> requires filtering on the server to be implemented efficiently
         self.dircache.clear()
-        self._repository_type_and_id_exists_cache.clear()
+        if not path:
+            self._repository_type_and_id_exists_cache.clear()
 
     def _open(
         self,
@@ -220,7 +221,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             commit_message=kwargs.get("commit_message", commit_message),
             commit_description=kwargs.get("commit_description"),
         )
-        self.invalidate_cache()
+        self.invalidate_cache(path=huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id)
 
     def rm(self, path, recursive=False, maxdepth=None, **kwargs):
         repo_type, repo_id, _ = self._resolve_repo_id(path)
@@ -243,7 +244,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             commit_message=kwargs.get("commit_message", commit_message),
             commit_description=kwargs.get("commit_description"),
         )
-        self.invalidate_cache()
+        self.invalidate_cache(path=huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id)
 
     def ls(self, path, detail=True, **kwargs):
         path = self._strip_protocol(path)
@@ -303,7 +304,8 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 commit_message=kwargs.get("commit_message", commit_message),
                 commit_description=kwargs.get("commit_description"),
             )
-        self.invalidate_cache()
+        self.invalidate_cache(path=huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type1, "") + repo_id1)
+        self.invalidate_cache(path=huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type2, "") + repo_id2)
 
     def modified(self, path):
         path = self._strip_protocol(path)
@@ -380,4 +382,6 @@ class HfFile(fsspec.spec.AbstractBufferedFile):
                 commit_description=self.kwargs.get("commit_description"),
             )
             os.remove(self.temp_file.name)
-            self.fs.invalidate_cache()
+            self.invalidate_cache(
+                path=huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(self.repo_type, "") + self.repo_id
+            )
