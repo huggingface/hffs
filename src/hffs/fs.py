@@ -4,7 +4,7 @@ import platform
 import tempfile
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, Optional, Tuple
 from urllib.parse import quote
 
 import fsspec
@@ -112,31 +112,18 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         self._api = huggingface_hub.HfApi(
             endpoint=endpoint, token=token, library_name="hffs", library_version=__version__
         )
-        self._repositories_type_and_id_exists_cache: Dict[Tuple[str, str], bool] = {}
-        self._repositories_paths_cache: Set[str] = set()
-        self._namespaces_paths_cache: Set[str] = set()
-        self._repository_types_paths_cache: Set[str] = set()
+        self._repository_type_and_id_exists_cache: Dict[Tuple[str, str], bool] = {}
 
     def _repo_exists(self, repo_id: str, repo_type: str) -> bool:
-        if (repo_type, repo_id) in self._repositories_type_and_id_exists_cache:
-            return self._repositories_type_and_id_exists_cache[(repo_type, repo_id)]
+        if (repo_type, repo_id) in self._repository_type_and_id_exists_cache:
+            return self._repository_type_and_id_exists_cache[(repo_type, repo_id)]
         else:
             try:
                 self._api.repo_info(repo_id, repo_type=repo_type)
-                self._repositories_type_and_id_exists_cache[(repo_type, repo_id)] = True
-                self._repository_types_paths_cache.add(
-                    huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "").rstrip("/")
-                )
-                self._repositories_paths_cache.add(
-                    huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id
-                )
-                if "/" in repo_id:
-                    self._namespaces_paths_cache.add(
-                        huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id.split("/")[0]
-                    )
+                self._repository_type_and_id_exists_cache[(repo_type, repo_id)] = True
                 return True
             except huggingface_hub.utils.RepositoryNotFoundError:
-                self._repositories_type_and_id_exists_cache[(repo_type, repo_id)] = False
+                self._repository_type_and_id_exists_cache[(repo_type, repo_id)] = False
                 return False
 
     def _resolve_repo_id(self, path: str) -> Tuple[str, str, str]:
@@ -179,13 +166,9 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         repo_type, repo_id, _ = self._resolve_repo_id(path)
         repo_info = self._api.repo_info(repo_id, revision=self.revision, repo_type=repo_type, files_metadata=True)
         child_dirs = collections.defaultdict(set)
+        repo_sibling_prefix = huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id + "/"
         for repo_file in repo_info.siblings:
-            hf_path = (
-                huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "")
-                + repo_id
-                + "/"
-                + repo_file.rfilename
-            )
+            hf_path = repo_sibling_prefix + repo_file.rfilename
             child = {
                 "name": hf_path,
                 "size": repo_file.size,
@@ -194,7 +177,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 "blob_id": repo_file.blob_id,
                 "lfs": repo_file.lfs,
             }
-            parents = list(PurePosixPath(hf_path).parents)[:-1] + [self.root_marker]
+            parents = list(PurePosixPath(hf_path).parents)[: -repo_sibling_prefix.count("/")]
             parent = str(parents[0])
             self.dircache.setdefault(str(parent), []).append(child)
             child = {"name": parent, "size": None, "type": "directory"}
@@ -202,10 +185,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 parent = str(parent)
                 if child["name"] in child_dirs[parent]:
                     break
-                # Important: cache only the repositories and their directories, and ignore higher level paths
-                # since we don't want to cache the exhaustive lists of repositories on the Hub
-                if parent and parent not in self._repository_types_paths_cache | self._namespaces_paths_cache:
-                    self.dircache.setdefault(parent, []).append(child)
+                self.dircache.setdefault(parent, []).append(child)
                 child_dirs[parent].add(child["name"])
                 child = {"name": parent, "size": None, "type": "directory"}
         return self.dircache
@@ -213,10 +193,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
     def invalidate_cache(self, path=None):
         # TODO: use `path` to optimize cache invalidation -> requires filtering on the server to be implemented efficiently
         self.dircache.clear()
-        self._repositories_type_and_id_exists_cache.clear()
-        self._repositories_paths_cache.clear()
-        self._namespaces_paths_cache.clear()
-        self._repository_types_paths_cache.clear()
+        self._repository_type_and_id_exists_cache.clear()
 
     def _open(
         self,
