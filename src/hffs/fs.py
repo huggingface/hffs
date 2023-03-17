@@ -330,12 +330,10 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         )
 
     def info(self, path, **kwargs):
-        # Fill cache first
-        try:
-            # pick an arbitrary path inside the repository
-            self.ls((path + "/foo") if path else "foo")
-        except (FileNotFoundError, NotImplementedError):
-            pass
+        path = self._strip_protocol(path)
+        repo_type, repo_id, path_in_repo = self._resolve_repo_id(path)
+        if not path_in_repo:
+            return {"name": path, "size": None, "type": "directory"}
         return super().info(path, **kwargs)
 
 
