@@ -4,7 +4,7 @@ import platform
 import tempfile
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
-from typing import Optional, Tuple
+from typing import Dict, Optional, Set, Tuple
 from urllib.parse import quote
 
 import fsspec
@@ -112,36 +112,67 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         self._api = huggingface_hub.HfApi(
             endpoint=endpoint, token=token, library_name="hffs", library_version=__version__
         )
+        self._repositories_type_and_id_exists_cache: Dict[Tuple[str, str], bool] = {}
+        self._repositories_paths_cache: Set[str] = set()
+        self._namespaces_paths_cache: Set[str] = set()
+        self._repository_types_paths_cache: Set[str] = set()
+
+    def _repo_exists(self, repo_id: str, repo_type: str) -> bool:
+        if (repo_type, repo_id) in self._repositories_type_and_id_exists_cache:
+            return self._repositories_type_and_id_exists_cache[(repo_type, repo_id)]
+        else:
+            try:
+                self._api.repo_info(repo_id, repo_type=repo_type)
+                self._repositories_type_and_id_exists_cache[(repo_type, repo_id)] = True
+                self._repository_types_paths_cache.add(
+                    huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "").rstrip("/")
+                )
+                self._repositories_paths_cache.add(
+                    huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id
+                )
+                if "/" in repo_id:
+                    self._namespaces_paths_cache.add(
+                        huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id.split("/")[0]
+                    )
+                return True
+            except huggingface_hub.utils.RepositoryNotFoundError:
+                self._repositories_type_and_id_exists_cache[(repo_type, repo_id)] = False
+                return False
 
     def _resolve_repo_id(self, path: str) -> Tuple[str, str, str]:
         path = self._strip_protocol(path)
-        if path.split("/")[0] in huggingface_hub.constants.REPO_TYPES_MAPPING:
+        if not path:
+            # can't list repositories at root
+            raise NotImplementedError("Acces to repositories lists is not implemented")
+        elif path.split("/")[0] + "/" in huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.values():
             if "/" not in path:
-                raise NotImplementedError("Listing repositories is not implemented.")
+                # can't list repositories at the repository type level
+                raise NotImplementedError("Acces to repositories lists is not implemented.")
             repo_type, path = path.split("/", 1)
             repo_type = huggingface_hub.constants.REPO_TYPES_MAPPING[repo_type]
         else:
-            repo_type = None
+            repo_type = huggingface_hub.constants.REPO_TYPE_MODEL
         if path.count("/") > 0:
-            try:
-                namespace, repo_name, *parts_in_repo = path.split("/")
-                repo_id_with_namespace = f"{namespace}/{repo_name}"
-                self._api.repo_info(repo_id_with_namespace, repo_type=repo_type)
+            repo_id_with_namespace = "/".join(path.split("/")[:2])
+            path_in_repo_with_namespace = "/".join(path.split("/")[2:])
+            repo_id_without_namespace = path.split("/")[0]
+            path_in_repo_without_namespace = "/".join(path.split("/")[1:])
+            if self._repo_exists(repo_id_with_namespace, repo_type=repo_type):
                 repo_id = repo_id_with_namespace
-            except huggingface_hub.utils.RepositoryNotFoundError:
-                try:
-                    repo_id_without_namespace, *parts_in_repo = path.split("/")
-                    self._api.repo_info(repo_id_without_namespace, repo_type=repo_type)
-                    repo_id = repo_id_without_namespace
-                except huggingface_hub.utils.RepositoryNotFoundError:
-                    raise FileNotFoundError(f"No such repository: '{repo_id_with_namespace}'")
+                path_in_repo = path_in_repo_with_namespace
+            elif self._repo_exists(repo_id_without_namespace, repo_type=repo_type):
+                repo_id = repo_id_without_namespace
+                path_in_repo = path_in_repo_without_namespace
+            else:
+                raise FileNotFoundError(f"No such repository: '{repo_id_with_namespace}'")
         else:
-            try:
-                repo_id, parts_in_repo = path, []
-                self._api.repo_info(path, repo_type=repo_type)
-            except huggingface_hub.utils.RepositoryNotFoundError:
-                raise FileNotFoundError(f"No such repository: '{repo_id}'")
-        path_in_repo = "/".join(parts_in_repo)
+            if self._repo_exists(path, repo_type=repo_type):
+                repo_id = path
+                path_in_repo = ""
+            else:
+                # can't list repositories at the namespace level
+                raise NotImplementedError("Acces to repositories lists is not implemented.")
+
         return repo_type, repo_id, path_in_repo
 
     def _dircache_from_repo_info(self, path: str):
@@ -171,7 +202,10 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 parent = str(parent)
                 if child["name"] in child_dirs[parent]:
                     break
-                self.dircache.setdefault(parent, []).append(child)
+                # Important: cache only the repositories and their directories, and ignore higher level paths
+                # since we don't want to cache the exhaustive lists of repositories on the Hub
+                if parent and parent not in self._repository_types_paths_cache | self._namespaces_paths_cache:
+                    self.dircache.setdefault(parent, []).append(child)
                 child_dirs[parent].add(child["name"])
                 child = {"name": parent, "size": None, "type": "directory"}
         return self.dircache
@@ -179,6 +213,10 @@ class HfFileSystem(fsspec.AbstractFileSystem):
     def invalidate_cache(self, path=None):
         # TODO: use `path` to optimize cache invalidation -> requires filtering on the server to be implemented efficiently
         self.dircache.clear()
+        self._repositories_type_and_id_exists_cache.clear()
+        self._repositories_paths_cache.clear()
+        self._namespaces_paths_cache.clear()
+        self._repository_types_paths_cache.clear()
 
     def _open(
         self,
@@ -232,8 +270,6 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 
     def ls(self, path, detail=True, **kwargs):
         path = self._strip_protocol(path)
-        if not path:
-            raise NotImplementedError("Listing repositories is not implemented.")
         out = self._ls_from_cache(path)
         if not out:
             self._dircache_from_repo_info(path)
@@ -313,6 +349,15 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             if PY_VERSION >= version.parse("3.11")
             else datetime.fromisoformat(item["lastCommit"]["date"].rstrip("Z")).replace(tzinfo=timezone.utc)
         )
+
+    def info(self, path, **kwargs):
+        # Fill cache first
+        try:
+            # pick an arbitrary path inside the repository
+            self.ls((path + "/foo") if path else "foo")
+        except (FileNotFoundError, NotImplementedError):
+            pass
+        return super().info(path, **kwargs)
 
 
 class HfFile(fsspec.spec.AbstractBufferedFile):

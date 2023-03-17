@@ -151,13 +151,13 @@ class HfFileSystemTests(unittest.TestCase):
     "root_path,repo_type,repo_id",
     [
         # Parse without namespace
-        ("gpt2", None, "gpt2"),
+        ("gpt2", "model", "gpt2"),
         ("datasets/squad", "dataset", "squad"),
         # Parse with namespace
-        ("username/my_model", None, "username/my_model"),
+        ("username/my_model", "model", "username/my_model"),
         ("datasets/username/my_dataset", "dataset", "username/my_dataset"),
         # Parse with hf:// protocol
-        ("hf://gpt2", None, "gpt2"),
+        ("hf://gpt2", "model", "gpt2"),
         ("hf://datasets/squad", "dataset", "squad"),
     ],
 )
@@ -173,8 +173,12 @@ def test_resolve_repo_id(root_path: str, repo_type: Optional[str], repo_id: str,
         assert fs._resolve_repo_id(path) == (repo_type, repo_id, path_in_repo)
 
 
-@pytest.mark.parametrize("not_supported_path", ["", "datasets", "hf://", "hf://datasets"])
-def test_list_repositories(not_supported_path):
+@pytest.mark.parametrize("not_supported_path", ["", "foo", "datasets", "datasets/foo"])
+def test_access_repositories_lists(not_supported_path):
     fs = HfFileSystem()
     with pytest.raises(NotImplementedError):
         fs.ls(not_supported_path)
+    with pytest.raises(NotImplementedError):
+        fs.glob(not_supported_path + "/")
+    with pytest.raises(NotImplementedError):
+        fs.open(not_supported_path)
