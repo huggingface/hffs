@@ -382,6 +382,6 @@ class HfFile(fsspec.spec.AbstractBufferedFile):
                 commit_description=self.kwargs.get("commit_description"),
             )
             os.remove(self.temp_file.name)
-            self.invalidate_cache(
+            self.fs.invalidate_cache(
                 path=huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(self.repo_type, "") + self.repo_id
             )
