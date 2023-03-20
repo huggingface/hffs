@@ -46,7 +46,7 @@ Instantiation via `fsspec`:
 
 > **Note**: To be recognized as a `hffs` URL, the URL path passed to [`fsspec.open`](https://filesystem-spec.readthedocs.io/en/latest/api.html?highlight=open#fsspec.open) must adhere to the following scheme:
 > ```
-> hf://[<repo_type>/]<repo_id>[@<revision>]:/<path/in/repo>
+> hf://[<repo_type_prefix>/]<repo_id>/<path/in/repo>
 > ```
 
 ## Installation
