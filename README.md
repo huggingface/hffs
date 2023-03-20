@@ -49,7 +49,7 @@ Instantiation via `fsspec`:
 > hf://[<repo_type_prefix>]<repo_id>/<path/in/repo>
 > ```
 
-The prefix for datasets in "datasets/", the prefix for spaces is "spaces/" and models don't need a prefix in the URL.
+The prefix for datasets is "datasets/", the prefix for spaces is "spaces/" and models don't need a prefix in the URL.
 
 ## Installation
 
