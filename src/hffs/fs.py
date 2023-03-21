@@ -1,10 +1,6 @@
-import collections
+import itertools
 import os
-import platform
-import re
 import tempfile
-from datetime import datetime, timezone
-from pathlib import PurePosixPath
 from typing import Dict, Optional, Tuple
 from urllib.parse import quote
 
@@ -14,23 +10,8 @@ import huggingface_hub.constants
 import huggingface_hub.utils
 import huggingface_hub.utils._pagination
 import requests
-from packaging import version
 
 from . import __version__
-
-
-PY_VERSION = version.parse(platform.python_version())
-RE_NEXT_LINK = re.compile(r'<([^>]+)>; rel="next"')
-
-if PY_VERSION >= version.parse("3.11"):
-
-    def _get_tz_aware_date_from_iso_date_str(date: str) -> datetime:
-        return datetime.fromisoformat(date)
-
-else:
-
-    def _get_tz_aware_date_from_iso_date_str(date: str) -> datetime:
-        return datetime.fromisoformat(date.rstrip("Z")).replace(tzinfo=timezone.utc)
 
 
 # huggingface_hub.hf_hub_url doesn't support non-default endpoints at the moment
@@ -223,36 +204,36 @@ class HfFileSystem(fsspec.AbstractFileSystem):
     def ls(self, path, detail=True, refresh=False, **kwargs):
         path = self._strip_protocol(path)
         if path not in self.dircache or refresh:
-            repo_type, repo_id, _ = self._resolve_repo_id(path)
-            child_dirs = collections.defaultdict(set)
-            repo_type_and_id_prefix = (
-                huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id + "/"
-            )
-            num_parts_in_repo_type_and_id_prefix = repo_type_and_id_prefix.count("/")
-            for repo_file in self._iter_tree(path):
-                if repo_file["type"] == "directory":
-                    continue
-                file_path = repo_type_and_id_prefix + repo_file["path"]
-                child = {
-                    "name": file_path,
-                    "size": repo_file["size"],
-                    "type": "file",
-                    # extra metadata for files
-                    "blob_id": repo_file["oid"],
-                    "lfs": repo_file.get("lfs"),
-                    "last_modified": _get_tz_aware_date_from_iso_date_str(repo_file["lastCommit"]["date"]),
+            repo_type, repo_id, path_in_repo = self._resolve_repo_id(path)
+            path_prefix = huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id + "/"
+            tree_iter = self._iter_tree(path)
+            try:
+                tree_item = next(tree_iter)
+            except huggingface_hub.utils.EntryNotFoundError:
+                if "/" in path_in_repo:
+                    path = self._parent(path)
+                    tree_iter = self._iter_tree(path)
+                else:
+                    raise
+            else:
+                tree_iter = itertools.chain([tree_item], tree_iter)
+            child_infos = []
+            for tree_item in tree_iter:
+                child_info = {
+                    "name": path_prefix + tree_item["path"],
+                    "size": tree_item["size"],
+                    "type": tree_item["type"],
                 }
-                parents = list(PurePosixPath(file_path).parents)[:-num_parts_in_repo_type_and_id_prefix]
-                parent = str(parents[0])
-                self.dircache.setdefault(str(parent), []).append(child)
-                child = {"name": parent, "size": None, "type": "directory"}
-                for parent in parents[1:]:
-                    parent = str(parent)
-                    if child["name"] in child_dirs[parent]:
-                        break
-                    self.dircache.setdefault(parent, []).append(child)
-                    child_dirs[parent].add(child["name"])
-                    child = {"name": parent, "size": None, "type": "directory"}
+                if tree_item["type"] == "file":
+                    child_info.update(
+                        {
+                            "blob_id": tree_item["oid"],
+                            "lfs": tree_item.get("lfs"),
+                            "last_modified": huggingface_hub.utils.parse_datetime(tree_item["lastCommit"]["date"]),
+                        },
+                    )
+                child_infos.append(child_info)
+            self.dircache[path] = child_infos
         out = self._ls_from_cache(path)
         return out if detail else [o["name"] for o in out]
 
@@ -261,11 +242,10 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         repo_type, repo_id, path_in_repo = self._resolve_repo_id(path)
         revision = self.revision if self.revision is not None else huggingface_hub.constants.DEFAULT_REVISION
         path = (
-            f"{self._api.endpoint}/api/{repo_type}s/{repo_id}/tree/{quote(revision, safe='')}/{self._parent(path_in_repo)}"
+            f"{self._api.endpoint}/api/{repo_type}s/{repo_id}/tree/{quote(revision, safe='')}/{path_in_repo}"
         ).rstrip("/")
-        params = {"recursive": 1}
         headers = self._api._build_hf_headers()
-        yield from huggingface_hub.utils._pagination.paginate(path, params=params, headers=headers)
+        yield from huggingface_hub.utils._pagination.paginate(path, params=None, headers=headers)
 
     def cp_file(self, path1, path2, **kwargs):
         repo_type1, repo_id1, path_in_repo1 = self._resolve_repo_id(path1)

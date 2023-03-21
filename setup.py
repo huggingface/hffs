@@ -104,7 +104,6 @@ REQUIRED_PKGS = [
     "fsspec",
     "requests",
     "huggingface_hub>=0.13.0",
-    "packaging>=20.9",
 ]
 
 
