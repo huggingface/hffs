@@ -8,10 +8,10 @@ Below is a (non-exhaustive) list of usage examples showcasing 🤗 Filesystem's 
   >>> import pandas as pd
 
   >>> # Read a remote CSV file into a dataframe
-  >>> df = pd.read_csv("hf://datasets/my-username/my-dataset-repo:/train.csv")
+  >>> df = pd.read_csv("hf://datasets/my-username/my-dataset-repo/train.csv")
 
   >>> # Write a dataframe to a remote CSV file
-  >>> df.to_csv("hf://datasets/my-username/my-dataset-repo:/test.csv")
+  >>> df.to_csv("hf://datasets/my-username/my-dataset-repo/test.csv")
   ```
 
   The same workflow can also be used for [Dask](https://docs.dask.org/en/stable/how-to/connect-to-remote-data.html) and [Polars](https://pola-rs.github.io/polars/py-polars/html/reference/io.html) DataFrames.
@@ -22,11 +22,11 @@ Below is a (non-exhaustive) list of usage examples showcasing 🤗 Filesystem's 
   >>> from hffs import HfFileSystem
   >>> import duckdb
 
-  >>> fs = HfFileSystem("my-username/my-dataset-repo", repo_type="dataset")
+  >>> fs = HfFileSystem()
   >>> duckdb.register_filesystem(fs)
   >>> # Query a remote file and get the result back as a dataframe
-  >>> fs_query_file = "data_dir/data.parquet"
-  >>> df = duckdb.query(f"SELECT * FROM '{fs.unstrip_protocol(fs_query_file)}' LIMIT 10").df()
+  >>> fs_query_file = "hf://datasets/my-username/my-dataset-repo/data_dir/data.parquet"
+  >>> df = duckdb.query(f"SELECT * FROM '{fs_query_file}' LIMIT 10").df()
   ```
 
 * Using 🤗 Hub as an array store with [Zarr](https://zarr.readthedocs.io/en/stable/tutorial.html#io-with-fsspec):
@@ -38,13 +38,13 @@ Below is a (non-exhaustive) list of usage examples showcasing 🤗 Filesystem's 
   >>> embeddings = np.random.randn(50000, 1000).astype("float32")
 
   >>> # Write an array to a repo
-  >>> with zarr.open_group("hf://my-username/my-model-repo:/array-store", mode="w") as root:
+  >>> with zarr.open_group("hf://my-username/my-model-repo/array-store", mode="w") as root:
   ...    foo = root.create_group("embeddings")
   ...    foobar = foo.zeros('experiment_0', shape=(50000, 1000), chunks=(10000, 1000), dtype='f4')
   ...    foobar[:] = embeddings
 
   >>> # Read an array from a repo
-  >>> with zarr.open_group("hf://my-username/my-model-repo:/array-store", mode="r") as root:
+  >>> with zarr.open_group("hf://my-username/my-model-repo/array-store", mode="r") as root:
   ...    first_row = root["embeddings/experiment_0"][0]
   ```
 

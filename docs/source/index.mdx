@@ -1,6 +1,6 @@
 # Filesystem
 
-🤗 Filesystem is a package that provides a pythonic [fsspec-compatible](https://filesystem-spec.readthedocs.io/en/latest/) file interface to the [Hugging Face Hub](https://huggingface.co/). It builds on top of the [Hugging Face Hub client library](https://huggingface.co/docs/huggingface_hub/index) to read and write files and inspect repositories on the Hub.
+🤗 Filesystem (`hffs`) is a package that provides a pythonic [fsspec-compatible](https://filesystem-spec.readthedocs.io/en/latest/) file interface to the [Hugging Face Hub](https://huggingface.co/). It builds on top of the [Hugging Face Hub client library](https://huggingface.co/docs/huggingface_hub/index) to read and write files and inspect repositories on the Hub.
 
 ## Installation
 
@@ -14,30 +14,30 @@ pip install hffs
 
 ```python
 >>> from hffs import HfFileSystem
->>> fs = HfFileSystem("my-username/my-dataset-repo", repo_type="dataset", revision="main")
+>>> fs = HfFileSystem()
 
 >>> # List files in a directory
->>> fs.ls("data")
-['train.csv', 'test.csv']
+>>> fs.ls("datasets/my-username/my-dataset-repo/data", detail=False)
+['datasets/my-username/my-dataset-repo/data/train.csv', 'datasets/my-username/my-dataset-repo/data/test.csv']
 
 >>> # List all ".csv" files in a repo
->>> fs.glob("**.csv")
-['data/train.csv', 'data/test.csv']
+>>> fs.glob("datasets/my-username/my-dataset-repo/**.csv")
+['datasets/my-username/my-dataset-repo/data/train.csv', 'datasets/my-username/my-dataset-repo/data/test.csv']
 
 >>> # Read the contents of a remote file 
->>> with fs.open("data/train.csv", "r") as f:
+>>> with fs.open("datasets/my-username/my-dataset-repo/data/train.csv", "r") as f:
 ...     train_data = f.readlines()
 
 >>> # Read all the contents of a remote file at once as a string
->>> train_data = fs.read_text("data/train.csv")
+>>> train_data = fs.read_text("datasets/my-username/my-dataset-repo/data/train.csv")
 
 >>> # Write a remote file
->>> with fs.open("data/validation.csv", "w") as f:
+>>> with fs.open("datasets/my-username/my-dataset-repo/data/validation.csv", "w") as f:
 ...     f.write("text,label")
 ...     f.write("Fantastic movie!,good")
 ```
 
-If not explicitly provided, the `repo_type` argument defaults to `model`. Besides `model`, other supported values are `dataset` and `space`.
+The prefix for datasets is "datasets/", the prefix for spaces is "spaces/" and models don't need a prefix in the URL.
 
 The optional `revision` argument can be passed to open a filesystem from a specific commit (any revision such as a branch or a tag name or a commit hash).
 
@@ -48,32 +48,31 @@ Unlike Python's built-in `open`, `fsspec`'s `open` defaults to binary mode, `"rb
 🤗 Filesystem can be used with any library that integrates `fsspec`, and the URL has the following structure:
 
 ```
-hf://[<repo_type>/]<repo_id>[@<revision>]:/<path/in/repo>
+hf://[<repo_type_prefix>]<repo_id>/<path/in/repo>
 ```
 
-The `repo_type` and `revision` parameters are optional. Most integrations also allow you to pass optional parameters to the filesystem's initializer as `storage_options`, a dictionary mapping parameter names to their values.
-
-Before passing a URL to an integration, you can use `fsspec.get_fs_token_paths` to ensure the URL initializes a filesystem as expected:
+The `revision` parameter is optional. Most integrations also allow you to pass optional parameters to the filesystem's initializer as `storage_options`, a dictionary mapping parameter names to their values:
 
 ```python
->>> import fsspec
-
->>> def get_filesystem_state_and_path_from_url(url):
-...     fs, _, paths = fsspec.get_fs_token_paths(url)
-...     return {"repo_type": fs.repo_type, "repo_id": fs.repo_id, "revision": fs.revision or "main", "path/in/repo": paths[0]}
-
->>> print(get_filesystem_state_and_path_from_url("hf://dataset/johndoe/cityskapes:/images/image0.jpg"))
-{'repo_type': 'dataset', 'repo_id': 'johndoe/cityskapes', 'revision': 'main', 'path/in/repo': 'images/image0.jpg'}
-
->>> print(get_filesystem_state_and_path_from_url("hf://johndoe/cityskapes@dev:/"))
-{'repo_type': 'model', 'repo_id': 'johndoe/cityskapes', 'revision': 'dev', 'path/in/repo': ''}
+>>> storage_options = {"revision": "main"}
 ```
 
 ## Authentication
 
-In many cases, you must be logged in with a Hugging Face account to interact with the Hub. Refer to the [Login](https://huggingface.co/docs/huggingface_hub/quick-start#login) section of the Hugging Face Hub client library documentation to learn about authentication methods on the Hub. 
+In many cases, you must be logged in with a Hugging Face account to interact with the Hub:
+
+```bash
+huggingface-cli login
+```
+
+Refer to the [Login](https://huggingface.co/docs/huggingface_hub/quick-start#login) section of the Hugging Face Hub client library documentation to learn more about authentication methods on the Hub. 
 
 It is also possible to login programmatically by passing your `token` as an argument to `HfFileSystem`. If you login this way, be careful not to accidentally leak the token when sharing your source code!
+
+```python
+>>> import hffs
+>>> fs = hffs.HfFileSystem(token=token)
+```
 
 ## API Reference
 
