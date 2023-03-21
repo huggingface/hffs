@@ -9,8 +9,8 @@ Locate and read a file from a 🤗 Hub repo:
 ```python
 >>> import hffs
 >>> fs = hffs.HfFileSystem()
->>> fs.ls("datasets/my-username/my-dataset-repo")
-['.gitattributes', 'my-file.txt']
+>>> fs.ls("datasets/my-username/my-dataset-repo", detail=False)
+['datasets/my-username/my-dataset-repo/.gitattributes', 'datasets/my-username/my-dataset-repo/my-file.txt']
 >>> with fs.open("datasets/my-username/my-dataset-repo/my-file.txt", "r") as f:
 ...     f.read()
 'Hello, world'
@@ -36,7 +36,7 @@ Instantiation via `fsspec`:
 >>> # Instantiate a `hffs.HfFileSystem` object
 >>> fs = fsspec.filesystem("hf")
 >>> fs.ls("my-username/my-model-repo")
-['.gitattributes', 'config.json', 'pytorch_model.bin']
+['my-username/my-model-repo/.gitattributes', 'my-username/my-model-repo/config.json', 'my-username/my-model-repo/pytorch_model.bin']
 
 >>> # Instantiate a `hffs.HfFileSystem` object and write a file to it
 >>> with fsspec.open("hf://datasets/my-username/my-dataset-repo/my-file-new.txt"):
