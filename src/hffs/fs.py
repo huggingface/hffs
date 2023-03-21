@@ -12,6 +12,7 @@ import fsspec
 import huggingface_hub
 import huggingface_hub.constants
 import huggingface_hub.utils
+import huggingface_hub.utils._pagination
 import requests
 from packaging import version
 
@@ -229,6 +230,8 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             )
             num_parts_in_repo_type_and_id_prefix = repo_type_and_id_prefix.count("/")
             for repo_file in self._iter_tree(path):
+                if repo_file["type"] == "directory":
+                    continue
                 file_path = repo_type_and_id_prefix + repo_file["path"]
                 child = {
                     "name": file_path,
@@ -256,25 +259,13 @@ class HfFileSystem(fsspec.AbstractFileSystem):
     def _iter_tree(self, path: str):
         path = self._strip_protocol(path)
         repo_type, repo_id, path_in_repo = self._resolve_repo_id(path)
-        headers = self._api._build_hf_headers()
         revision = self.revision if self.revision is not None else huggingface_hub.constants.DEFAULT_REVISION
-        next_url = (
+        path = (
             f"{self._api.endpoint}/api/{repo_type}s/{repo_id}/tree/{quote(revision, safe='')}/{self._parent(path_in_repo)}"
-        )
-        next_url = next_url.rstrip("/") + "?recursive=1"
-        while next_url:
-            response = requests.get(next_url, headers=headers)
-            huggingface_hub.utils.hf_raise_for_status(response)
-            tree = response.json()
-            for item in tree:
-                if item["type"] == "file":
-                    yield item
-            link = response.headers.get("Link")
-            next_url = None
-            if link:
-                match = RE_NEXT_LINK.search(link)
-                if match:
-                    next_url = match.group(1)
+        ).rstrip("/")
+        params = {"recursive": 1}
+        headers = self._api._build_hf_headers()
+        yield from huggingface_hub.utils._pagination.paginate(path, params=params, headers=headers)
 
     def cp_file(self, path1, path2, **kwargs):
         repo_type1, repo_id1, path_in_repo1 = self._resolve_repo_id(path1)
