@@ -13,10 +13,10 @@ Locate and read a file from a 🤗 Hub repo:
 
 ```python
 >>> import hffs
->>> fs = hffs.HfFileSystem("my-username/my-dataset-repo", repo_type="dataset")
->>> fs.ls("")
+>>> fs = hffs.HfFileSystem()
+>>> fs.ls("datasets/my-username/my-dataset-repo")
 ['.gitattributes', 'my-file.txt']
->>> with fs.open("my-file.txt", "r") as f:
+>>> with fs.open("datasets/my-username/my-dataset-repo/my-file.txt", "r") as f:
 ...     f.read()
 'Hello, world'
 ```
@@ -24,12 +24,12 @@ Locate and read a file from a 🤗 Hub repo:
 Write a file to the repo:
 
 ```python
->>> with fs.open("my-file-new.txt", "w") as f:
+>>> with fs.open("datasets/my-username/my-dataset-repo/my-file-new.txt", "w") as f:
 ...     f.write("Hello, world1")
 ...     f.write("Hello, world2")
->>> fs.exists("my-file-new.txt")
+>>> fs.exists("datasets/my-username/my-dataset-repo/my-file-new.txt")
 True
->>> fs.du("my-file-new.txt")
+>>> fs.du("datasets/my-username/my-dataset-repo/my-file-new.txt")
 26
 ```
 
@@ -39,20 +39,22 @@ Instantiation via `fsspec`:
 >>> import fsspec
 
 >>> # Instantiate a `hffs.HfFileSystem` object
->>> fs = fsspec.filesystem("hf://my-username/my-model-repo")
->>> fs.ls("")
+>>> fs = fsspec.filesystem("hf")
+>>> fs.ls("my-username/my-model-repo")
 ['.gitattributes', 'config.json', 'pytorch_model.bin']
 
 >>> # Instantiate a `hffs.HfFileSystem` object and write a file to it
->>> with fsspec.open("hf://datasets/my-username/my-dataset-repo:/my-file-new.txt"):
+>>> with fsspec.open("hf://datasets/my-username/my-dataset-repo/my-file-new.txt"):
 ...     f.write("Hello, world1")
 ...     f.write("Hello, world2")
 ```
 
 > **Note**: To be recognized as a `hffs` URL, the URL path passed to [`fsspec.open`](https://filesystem-spec.readthedocs.io/en/latest/api.html?highlight=open#fsspec.open) must adhere to the following scheme:
 > ```
-> hf://[<repo_type>/]<repo_id>[@<revision>]:/<path/in/repo>
+> hf://[<repo_type_prefix>]<repo_id>/<path/in/repo>
 > ```
+
+The prefix for datasets is "datasets/", the prefix for spaces is "spaces/" and models don't need a prefix in the URL.
 
 ## Installation
 
