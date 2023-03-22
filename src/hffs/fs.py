@@ -1,9 +1,6 @@
-import collections
+import itertools
 import os
-import platform
 import tempfile
-from datetime import datetime, timezone
-from pathlib import PurePosixPath
 from typing import Dict, Optional, Tuple
 from urllib.parse import quote
 
@@ -11,14 +8,10 @@ import fsspec
 import huggingface_hub
 import huggingface_hub.constants
 import huggingface_hub.utils
+import huggingface_hub.utils._pagination
 import requests
-from packaging import version
 
 from . import __version__
-
-
-PY_VERSION = version.parse(platform.python_version())
-HFH_VERSION = version.parse(huggingface_hub.__version__)
 
 
 # huggingface_hub.hf_hub_url doesn't support non-default endpoints at the moment
@@ -59,9 +52,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             An optional Git revision id which can be a branch name, a tag, or a
             commit hash. Defaults to the head of the `"main"` branch.
 
-    Direct usage:
-
-    Models:
+    Usage:
 
     ```python
     >>> import hffs
@@ -80,18 +71,6 @@ class HfFileSystem(fsspec.AbstractFileSystem):
     >>> with fs.open("my-username/my-model/pytorch_model.bin", "wb") as f:
     ...     f.write(data)
     ```
-
-    Usage via [`fsspec`](https://filesystem-spec.readthedocs.io/en/latest/)):
-
-    ```python
-    >>> import fsspec
-
-    >>> # Read/write files
-    >>> with fsspec.open("hf://my-username/my-model/pytorch_model.bin") as f:
-    ...     data = f.read()
-    >>> with fsspec.open("hf://my-username/my-model/pytorch_model.bin", "wb") as f:
-    ...     f.write(data)
-    ```
     """
 
     root_marker = ""
@@ -100,14 +79,14 @@ class HfFileSystem(fsspec.AbstractFileSystem):
     def __init__(
         self,
         *args,
-        token: Optional[str] = None,
         endpoint: Optional[str] = None,
+        token: Optional[str] = None,
         revision: Optional[str] = None,
         **storage_options,
     ):
         super().__init__(*args, **storage_options)
+        self.endpoint = endpoint or huggingface_hub.constants.ENDPOINT
         self.token = token
-        self.endpoint = endpoint
         self.revision = revision
         self._api = huggingface_hub.HfApi(
             endpoint=endpoint, token=token, library_name="hffs", library_version=__version__
@@ -162,39 +141,15 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 
         return repo_type, repo_id, path_in_repo
 
-    def _dircache_from_repo_info(self, path: str):
-        repo_type, repo_id, _ = self._resolve_repo_id(path)
-        repo_info = self._api.repo_info(repo_id, revision=self.revision, repo_type=repo_type, files_metadata=True)
-        child_dirs = collections.defaultdict(set)
-        repo_sibling_prefix = huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id + "/"
-        for repo_file in repo_info.siblings:
-            hf_path = repo_sibling_prefix + repo_file.rfilename
-            child = {
-                "name": hf_path,
-                "size": repo_file.size,
-                "type": "file",
-                # extra metadata for files
-                "blob_id": repo_file.blob_id,
-                "lfs": repo_file.lfs,
-            }
-            parents = list(PurePosixPath(hf_path).parents)[: -repo_sibling_prefix.count("/")]
-            parent = str(parents[0])
-            self.dircache.setdefault(str(parent), []).append(child)
-            child = {"name": parent, "size": None, "type": "directory"}
-            for parent in parents[1:]:
-                parent = str(parent)
-                if child["name"] in child_dirs[parent]:
-                    break
-                self.dircache.setdefault(parent, []).append(child)
-                child_dirs[parent].add(child["name"])
-                child = {"name": parent, "size": None, "type": "directory"}
-        return self.dircache
-
     def invalidate_cache(self, path=None):
-        # TODO: use `path` to optimize cache invalidation -> requires filtering on the server to be implemented efficiently
-        self.dircache.clear()
         if not path:
+            self.dircache.clear()
             self._repository_type_and_id_exists_cache.clear()
+        else:
+            path = self._strip_protocol(path)
+            while path:
+                self.dircache.pop(path, None)
+                path = self._parent(path)
 
     def _open(
         self,
@@ -221,7 +176,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             commit_message=kwargs.get("commit_message", commit_message),
             commit_description=kwargs.get("commit_description"),
         )
-        self.invalidate_cache(path=huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id)
+        self.invalidate_cache(path=path)
 
     def rm(self, path, recursive=False, maxdepth=None, **kwargs):
         repo_type, repo_id, _ = self._resolve_repo_id(path)
@@ -244,19 +199,53 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             commit_message=kwargs.get("commit_message", commit_message),
             commit_description=kwargs.get("commit_description"),
         )
-        self.invalidate_cache(path=huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id)
+        self.invalidate_cache(path=path)
 
-    def ls(self, path, detail=True, **kwargs):
+    def ls(self, path, detail=True, refresh=False, **kwargs):
         path = self._strip_protocol(path)
+        if path not in self.dircache or refresh:
+            repo_type, repo_id, path_in_repo = self._resolve_repo_id(path)
+            path_prefix = huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id + "/"
+            tree_iter = self._iter_tree(path)
+            try:
+                tree_item = next(tree_iter)
+            except huggingface_hub.utils.EntryNotFoundError:
+                if "/" in path_in_repo:
+                    path = self._parent(path)
+                    tree_iter = self._iter_tree(path)
+                else:
+                    raise
+            else:
+                tree_iter = itertools.chain([tree_item], tree_iter)
+            child_infos = []
+            for tree_item in tree_iter:
+                child_info = {
+                    "name": path_prefix + tree_item["path"],
+                    "size": tree_item["size"],
+                    "type": tree_item["type"],
+                }
+                if tree_item["type"] == "file":
+                    child_info.update(
+                        {
+                            "blob_id": tree_item["oid"],
+                            "lfs": tree_item.get("lfs"),
+                            "last_modified": huggingface_hub.utils.parse_datetime(tree_item["lastCommit"]["date"]),
+                        },
+                    )
+                child_infos.append(child_info)
+            self.dircache[path] = child_infos
         out = self._ls_from_cache(path)
-        if not out:
-            self._dircache_from_repo_info(path)
-        out = self._ls_from_cache(path)
-        if out is None:
-            raise FileNotFoundError(path)
-        if detail:
-            return out
-        return [o["name"] for o in out]
+        return out if detail else [o["name"] for o in out]
+
+    def _iter_tree(self, path: str):
+        path = self._strip_protocol(path)
+        repo_type, repo_id, path_in_repo = self._resolve_repo_id(path)
+        revision = self.revision if self.revision is not None else huggingface_hub.constants.DEFAULT_REVISION
+        path = (
+            f"{self._api.endpoint}/api/{repo_type}s/{repo_id}/tree/{quote(revision, safe='')}/{path_in_repo}"
+        ).rstrip("/")
+        headers = self._api._build_hf_headers()
+        yield from huggingface_hub.utils._pagination.paginate(path, params=None, headers=headers)
 
     def cp_file(self, path1, path2, **kwargs):
         repo_type1, repo_id1, path_in_repo1 = self._resolve_repo_id(path1)
@@ -278,7 +267,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                     {
                         "path": path_in_repo2,
                         "algo": "sha256",
-                        "oid": self.info(path1)["lfs"]["sha256"],
+                        "oid": self.info(path1)["lfs"]["oid"],
                     }
                 ],
                 "deletedFiles": [],
@@ -304,34 +293,18 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 commit_message=kwargs.get("commit_message", commit_message),
                 commit_description=kwargs.get("commit_description"),
             )
-        self.invalidate_cache(path=huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type1, "") + repo_id1)
-        self.invalidate_cache(path=huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type2, "") + repo_id2)
+        self.invalidate_cache(path1)
+        self.invalidate_cache(path2)
 
-    def modified(self, path):
-        path = self._strip_protocol(path)
-        repo_type, repo_id, path_in_repo = self._resolve_repo_id(path)
-        if not self.isfile(path):
+    def modified(self, path, refresh=False):
+        info = self.info(path, refresh=refresh)
+        if info["type"] != "file":
             raise FileNotFoundError(path)
-        headers = self._api._build_hf_headers()
-        revision = self.revision if self.revision is not None else huggingface_hub.constants.DEFAULT_REVISION
-
-        response = requests.post(
-            f"{self.endpoint}/api/{repo_type}s/{repo_id}/paths-info/{quote(revision, safe='')}",
-            headers=headers,
-            data={"paths": [path_in_repo], "expand": True},
-        )
-        huggingface_hub.utils.hf_raise_for_status(response)
-        item = response.json()[0]
-
-        return (
-            datetime.fromisoformat(item["lastCommit"]["date"])
-            if PY_VERSION >= version.parse("3.11")
-            else datetime.fromisoformat(item["lastCommit"]["date"].rstrip("Z")).replace(tzinfo=timezone.utc)
-        )
+        return info["last_modified"]
 
     def info(self, path, **kwargs):
         path = self._strip_protocol(path)
-        repo_type, repo_id, path_in_repo = self._resolve_repo_id(path)
+        _, _, path_in_repo = self._resolve_repo_id(path)
         if not path_in_repo:
             return {"name": path, "size": None, "type": "directory"}
         return super().info(path, **kwargs)
@@ -380,6 +353,4 @@ class HfFile(fsspec.spec.AbstractBufferedFile):
                 commit_description=self.kwargs.get("commit_description"),
             )
             os.remove(self.temp_file.name)
-            self.fs.invalidate_cache(
-                path=huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(self.repo_type, "") + self.repo_id
-            )
+            self.fs.invalidate_cache(path=self.path)
