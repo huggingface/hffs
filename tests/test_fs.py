@@ -55,6 +55,15 @@ class HfFileSystemTests(unittest.TestCase):
             sorted([self.hf_path + "/.gitattributes", self.hf_path + "/data"]),
         )
 
+        self.assertEqual(
+            sorted(self.hffs.glob(self.hf_path + "/*", revision="main")),
+            sorted([self.hf_path + "/.gitattributes", self.hf_path + "/data"]),
+        )
+        self.assertEqual(
+            sorted(self.hffs.glob(self.hf_path + "@main" + "/*")),
+            sorted([self.hf_path + "@main" + "/.gitattributes", self.hf_path + "@main" + "/data"]),
+        )
+
     def test_file_type(self):
         self.assertTrue(
             self.hffs.isdir(self.hf_path + "/data") and not self.hffs.isdir(self.hf_path + "/.gitattributes")
