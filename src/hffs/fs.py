@@ -62,24 +62,19 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         self._api = huggingface_hub.HfApi(
             endpoint=endpoint, token=token, library_name="hffs", library_version=__version__
         )
-        self._repo_and_revision_exists_cache: Dict[Tuple[str, str, str], Tuple[bool, bool]] = {}
+        self._repository_type_and_id_exists_cache: Dict[Tuple[str, str], bool] = {}
 
-    def _repo_and_revision_exists(self, repo_id: str, repo_type: str, revision: str) -> Tuple[bool, bool]:
-        revision = revision if revision != huggingface_hub.constants.DEFAULT_REVISION else None
-        if (repo_type, repo_id, revision) in self._repo_and_revision_exists_cache:
-            return self._repo_and_revision_exists_cache[(repo_type, repo_id, revision)]
+    def _repo_exists(self, repo_id: str, repo_type: str) -> bool:
+        if (repo_type, repo_id) in self._repository_type_and_id_exists_cache:
+            return self._repository_type_and_id_exists_cache[(repo_type, repo_id)]
         else:
             try:
-                self._api.repo_info(repo_id, repo_type=repo_type, revision=revision)
+                self._api.repo_info(repo_id, repo_type=repo_type)
+                self._repository_type_and_id_exists_cache[(repo_type, repo_id)] = True
+                return True
             except (huggingface_hub.utils.RepositoryNotFoundError, huggingface_hub.utils.HFValidationError):
-                self._repo_and_revision_exists_cache[(repo_type, repo_id, revision)] = False, False
-            except huggingface_hub.utils.RevisionNotFoundError:
-                self._repo_and_revision_exists_cache[(repo_type, repo_id, revision)] = True, False
-                self._repo_and_revision_exists_cache[(repo_type, repo_id, None)] = True, True
-            else:
-                self._repo_and_revision_exists_cache[(repo_type, repo_id, revision)] = True, True
-                self._repo_and_revision_exists_cache[(repo_type, repo_id, None)] = True, True
-            return self._repo_and_revision_exists_cache[(repo_type, repo_id, revision)]
+                self._repository_type_and_id_exists_cache[(repo_type, repo_id)] = False
+                return False
 
     def resolve_path(self, path: str) -> Tuple[str, str, Optional[str], str]:
         path = self._strip_protocol(path)
@@ -94,48 +89,40 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             repo_type = huggingface_hub.constants.REPO_TYPES_MAPPING[repo_type]
         else:
             repo_type = huggingface_hub.constants.REPO_TYPE_MODEL
+        revision = None
         if path.count("/") > 0:
-            repo_id_with_namespace = "/".join(path.split("/")[:2])
-            revision_with_namespace = unquote(path.split("/")[2]) if len(path.split("/")) > 2 else None
-            path_in_repo_with_namespace = "/".join(path.split("/")[3:])
-            repo_id_without_namespace = path.split("/")[0]
-            revision_without_namespace = unquote(path.split("/")[1]) if len(path.split("/")) > 1 else None
-            path_in_repo_without_namespace = "/".join(path.split("/")[2:])
-
-            repo_exists, revision_exists = self._repo_and_revision_exists(
-                repo_id_with_namespace,
-                repo_type=repo_type,
-                revision=revision_with_namespace,
-            )
-            if repo_exists:
-                repo_id = repo_id_with_namespace
-                if revision_exists:
-                    revision = revision_with_namespace
-                    path_in_repo = path_in_repo_with_namespace
+            if "@" in path:
+                repo_id, revision = path.split("@", 1)
+                if "/" in revision:
+                    revision, path_in_repo = revision.split("/", 1)
                 else:
-                    revision = None
-                    path_in_repo = f"{revision_with_namespace}/{path_in_repo_with_namespace}".rstrip("/")
+                    path_in_repo = ""
+                revision = unquote(revision)
+                if not self._repo_exists(repo_id, repo_type=repo_type):
+                    raise FileNotFoundError(f"No such repository: '{repo_id}'")
+                return repo_type, repo_id, revision, path_in_repo
             else:
-                repo_exists, revision_exists = self._repo_and_revision_exists(
-                    repo_id_without_namespace,
-                    repo_type=repo_type,
-                    revision=revision_without_namespace,
-                )
-                if repo_exists:
+                revision = None
+                repo_id_with_namespace = "/".join(path.split("/")[:2])
+                path_in_repo_with_namespace = "/".join(path.split("/")[2:])
+                repo_id_without_namespace = path.split("/")[0]
+                path_in_repo_without_namespace = "/".join(path.split("/")[1:])
+                if self._repo_exists(repo_id_with_namespace, repo_type=repo_type):
+                    repo_id = repo_id_with_namespace
+                    path_in_repo = path_in_repo_with_namespace
+                elif self._repo_exists(repo_id_without_namespace, repo_type=repo_type):
                     repo_id = repo_id_without_namespace
-                    if revision_exists:
-                        revision = revision_without_namespace
-                        path_in_repo = path_in_repo_without_namespace
-                    else:
-                        revision = None
-                        path_in_repo = f"{revision_without_namespace}/{path_in_repo_without_namespace}".rstrip("/")
+                    path_in_repo = path_in_repo_without_namespace
                 else:
                     raise FileNotFoundError(f"No such repository: '{repo_id_with_namespace}'")
         else:
-            repo_exists, revision_exists = self._repo_and_revision_exists(path, repo_type=repo_type, revision=None)
-            if repo_exists:
-                repo_id = path
+            if "@" in path:
+                path, revision = path.split("@", 1)
+                revision = unquote(revision)
+            else:
                 revision = None
+            if self._repo_exists(path, repo_type=repo_type):
+                repo_id = path
                 path_in_repo = ""
             else:
                 # can't list repositories at the namespace level
@@ -152,26 +139,26 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                     " not the same."
                 )
         else:
-            revision = revision_in_path or huggingface_hub.constants.DEFAULT_REVISION
+            revision = revision_in_path
         return repo_type, repo_id, revision, path_in_repo
 
     def _unresolve_path(self, repo_type: str, repo_id: str, revision: Optional[str], path_in_repo: str) -> str:
-        path = huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id + "/"
+        path = huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id
         if revision is not None:
-            path += quote(revision, safe="") + "/"
-        path += path_in_repo
+            path += "@" + quote(revision, safe="")
+        path += "/" + path_in_repo
         path = path.rstrip("/")
         return path
 
     def invalidate_cache(self, path=None):
         if not path:
             self.dircache.clear()
-            self._repo_and_revision_exists_cache.clear()
+            self._repository_type_and_id_exists_cache.clear()
         else:
-            repo_type, repo_id, revision, path_in_repo = self.resolve_path(path)
-            revision = revision if revision != huggingface_hub.constants.DEFAULT_REVISION else None
-            path = self._unresolve_path(repo_type, repo_id, None, path_in_repo)
             path = self._strip_protocol(path)
+            repo_type, repo_id, revision, path_in_repo = self.resolve_path(path)
+            revision = revision if revision is not None else huggingface_hub.constants.DEFAULT_REVISION
+            path = self._unresolve_path(repo_type, repo_id, revision, path_in_repo)
             while path:
                 self.dircache.pop(path, None)
                 path = self._parent(path)
@@ -229,8 +216,9 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 
     def ls(self, path, detail=True, refresh=False, revision: Optional[str] = None, **kwargs):
         path = self._strip_protocol(path)
+        repo_type, repo_id, revision_in_path, path_in_repo = self.resolve_path(path)
         repo_type, repo_id, revision, path_in_repo = self._resolve_path_with_revision(path, revision)
-        revision = revision if revision != huggingface_hub.constants.DEFAULT_REVISION else None
+        revision = revision if revision is not None else huggingface_hub.constants.DEFAULT_REVISION
         path = self._unresolve_path(repo_type, repo_id, revision, path_in_repo)
         if path not in self.dircache or refresh:
             path_prefix = self._unresolve_path(repo_type, repo_id, revision, "") + "/"
@@ -263,6 +251,8 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 child_infos.append(child_info)
             self.dircache[path] = child_infos
         out = self._ls_from_cache(path)
+        if revision_in_path is None:
+            out = [{**o, "name": o["name"].replace("@" + revision, "", 1)} for o in out]
         return out if detail else [o["name"] for o in out]
 
     def _iter_tree(self, path: str, revision: Optional[str] = None):
@@ -302,7 +292,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 "deletedFiles": [],
             }
             revision2 = (
-                quote(revision2, safe="") if revision is not None else huggingface_hub.constants.DEFAULT_REVISION
+                quote(revision2, safe="") if revision2 is not None else huggingface_hub.constants.DEFAULT_REVISION
             )
             r = requests.post(
                 f"{self.endpoint}/api/{repo_type1}s/{repo_id1}/commit/{revision2}",
