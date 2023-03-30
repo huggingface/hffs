@@ -158,19 +158,19 @@ class HfFileSystemTests(unittest.TestCase):
     "root_path,repo_type,repo_id,revision",
     [
         # Parse without namespace
-        ("gpt2", "model", "gpt2", None),
+        ("gpt2", "model", "gpt2", "main"),
         ("gpt2@dev", "model", "gpt2", "dev"),
-        ("datasets/squad", "dataset", "squad", None),
+        ("datasets/squad", "dataset", "squad", "main"),
         ("datasets/squad@dev", "dataset", "squad", "dev"),
         # Parse with namespace
-        ("username/my_model", "model", "username/my_model", None),
+        ("username/my_model", "model", "username/my_model", "main"),
         ("username/my_model@dev", "model", "username/my_model", "dev"),
-        ("datasets/username/my_dataset", "dataset", "username/my_dataset", None),
+        ("datasets/username/my_dataset", "dataset", "username/my_dataset", "main"),
         ("datasets/username/my_dataset@dev", "dataset", "username/my_dataset", "dev"),
         # Parse with hf:// protocol
-        ("hf://gpt2", "model", "gpt2", None),
+        ("hf://gpt2", "model", "gpt2", "main"),
         ("hf://gpt2@dev", "model", "gpt2", "dev"),
-        ("hf://datasets/squad", "dataset", "squad", None),
+        ("hf://datasets/squad", "dataset", "squad", "main"),
         ("hf://datasets/squad@dev", "dataset", "squad", "dev"),
     ],
 )
@@ -183,9 +183,17 @@ def test_resolve_path(
     def mock_repo_info(repo_id: str, *, repo_type: str, **kwargs):
         if repo_id not in ["gpt2", "squad", "username/my_dataset", "username/my_model"]:
             raise huggingface_hub.utils.RepositoryNotFoundError(repo_id)
+        if revision is not None and revision not in ["main", "dev"]:
+            raise huggingface_hub.utils.RevisionNotFoundError(revision)
 
     with patch.object(fs._api, "repo_info", mock_repo_info):
-        assert fs.resolve_path(path) == (repo_type, repo_id, revision, path_in_repo)
+        resolved_path = fs.resolve_path(path)
+        assert (
+            resolved_path.repo_type,
+            resolved_path.repo_id,
+            resolved_path.revision,
+            resolved_path.path_in_repo,
+        ) == (repo_type, repo_id, revision, path_in_repo)
 
 
 @pytest.mark.parametrize("not_supported_path", ["", "foo", "datasets", "datasets/foo"])

@@ -1,6 +1,7 @@
 import itertools
 import os
 import tempfile
+from dataclasses import dataclass
 from glob import has_magic
 from typing import Dict, Optional, Tuple
 from urllib.parse import quote, unquote
@@ -13,6 +14,23 @@ import huggingface_hub.utils._pagination
 import requests
 
 from . import __version__
+
+
+@dataclass
+class ResolvedPath:
+    """Data structure containing information about a resolved path."""
+
+    repo_type: str
+    repo_id: str
+    revision: str
+    path_in_repo: str
+
+    def unresolve(self):
+        path = (
+            f"{huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(self.repo_type, '') + self.repo_id}@{self.revision}/{self.path_in_repo}"
+            .rstrip("/")
+        )
+        return path
 
 
 class HfFileSystem(fsspec.AbstractFileSystem):
@@ -62,25 +80,46 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         self._api = huggingface_hub.HfApi(
             endpoint=endpoint, token=token, library_name="hffs", library_version=__version__
         )
-        self._repository_type_and_id_exists_cache: Dict[Tuple[str, str], bool] = {}
+        # Maps (repo_type, repo_id, revision) to a 2-tuple with:
+        #  * the 1st element indicating whether the repositoy and the revision exist
+        #  * the 2nd element being the exception raised if the repository or revision doesn't exist
+        self._repo_and_revision_exists_cache: Dict[Tuple[str, str, str], Tuple[bool, Optional[Exception]]] = {}
 
-    def _repo_exists(self, repo_id: str, repo_type: str) -> bool:
-        if (repo_type, repo_id) in self._repository_type_and_id_exists_cache:
-            return self._repository_type_and_id_exists_cache[(repo_type, repo_id)]
-        else:
+    def _repo_and_revision_exist(
+        self, repo_type: str, repo_id: str, revision: Optional[str]
+    ) -> Tuple[bool, Optional[Exception]]:
+        if (repo_type, repo_id, revision) not in self._repo_and_revision_exists_cache:
             try:
-                self._api.repo_info(repo_id, repo_type=repo_type)
-                self._repository_type_and_id_exists_cache[(repo_type, repo_id)] = True
-                return True
-            except (huggingface_hub.utils.RepositoryNotFoundError, huggingface_hub.utils.HFValidationError):
-                self._repository_type_and_id_exists_cache[(repo_type, repo_id)] = False
-                return False
+                self._api.repo_info(repo_id, revision=revision, repo_type=repo_type)
+            except (huggingface_hub.utils.RepositoryNotFoundError, huggingface_hub.utils.HFValidationError) as e:
+                self._repo_and_revision_exists_cache[(repo_type, repo_id, revision)] = False, e
+                self._repo_and_revision_exists_cache[(repo_type, repo_id, None)] = False, e
+            except huggingface_hub.utils.RevisionNotFoundError as e:
+                self._repo_and_revision_exists_cache[(repo_type, repo_id, revision)] = False, e
+                self._repo_and_revision_exists_cache[(repo_type, repo_id, None)] = True, None
+            else:
+                self._repo_and_revision_exists_cache[(repo_type, repo_id, revision)] = True, None
+                self._repo_and_revision_exists_cache[(repo_type, repo_id, None)] = True, None
+        return self._repo_and_revision_exists_cache[(repo_type, repo_id, revision)]
 
-    def resolve_path(self, path: str) -> Tuple[str, str, Optional[str], str]:
+    def resolve_path(self, path: str, revision: Optional[str] = None) -> ResolvedPath:
+        def _align_revision_in_path_with_revision(
+            revision_in_path: Optional[str], revision: Optional[str]
+        ) -> Optional[str]:
+            if revision is not None:
+                if revision_in_path is not None and revision_in_path != revision:
+                    raise ValueError(
+                        f'Revision specified in path ("{revision_in_path}") and in `revision` argument ("{revision}")'
+                        " are not the same."
+                    )
+            else:
+                revision = revision_in_path
+            return revision
+
         path = self._strip_protocol(path)
         if not path:
             # can't list repositories at root
-            raise NotImplementedError("Acces to repositories lists is not implemented")
+            raise NotImplementedError("Acces to repositories lists is not implemented.")
         elif path.split("/")[0] + "/" in huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.values():
             if "/" not in path:
                 # can't list repositories at the repository type level
@@ -89,66 +128,50 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             repo_type = huggingface_hub.constants.REPO_TYPES_MAPPING[repo_type]
         else:
             repo_type = huggingface_hub.constants.REPO_TYPE_MODEL
-        revision = None
         if path.count("/") > 0:
             if "@" in path:
-                repo_id, revision = path.split("@", 1)
-                if "/" in revision:
-                    revision, path_in_repo = revision.split("/", 1)
+                repo_id, revision_in_path = path.split("@", 1)
+                if "/" in revision_in_path:
+                    revision_in_path, path_in_repo = revision_in_path.split("/", 1)
                 else:
                     path_in_repo = ""
-                revision = unquote(revision)
-                if not self._repo_exists(repo_id, repo_type=repo_type):
-                    raise FileNotFoundError(f"No such repository: '{repo_id}'")
-                return repo_type, repo_id, revision, path_in_repo
+                revision_in_path = unquote(revision_in_path)
+                revision = _align_revision_in_path_with_revision(revision_in_path, revision)
+                repo_and_revision_exist, err = self._repo_and_revision_exist(repo_type, repo_id, revision)
+                if not repo_and_revision_exist:
+                    raise FileNotFoundError(path) from err
             else:
-                revision = None
                 repo_id_with_namespace = "/".join(path.split("/")[:2])
                 path_in_repo_with_namespace = "/".join(path.split("/")[2:])
                 repo_id_without_namespace = path.split("/")[0]
                 path_in_repo_without_namespace = "/".join(path.split("/")[1:])
-                if self._repo_exists(repo_id_with_namespace, repo_type=repo_type):
-                    repo_id = repo_id_with_namespace
-                    path_in_repo = path_in_repo_with_namespace
-                elif self._repo_exists(repo_id_without_namespace, repo_type=repo_type):
-                    repo_id = repo_id_without_namespace
-                    path_in_repo = path_in_repo_without_namespace
-                else:
-                    raise FileNotFoundError(f"No such repository: '{repo_id_with_namespace}'")
+                repo_id = repo_id_with_namespace
+                path_in_repo = path_in_repo_with_namespace
+                repo_and_revision_exist, err = self._repo_and_revision_exist(repo_type, repo_id, revision)
+                if not repo_and_revision_exist:
+                    if isinstance(
+                        err, (huggingface_hub.utils.RepositoryNotFoundError, huggingface_hub.utils.HFValidationError)
+                    ):
+                        repo_id = repo_id_without_namespace
+                        path_in_repo = path_in_repo_without_namespace
+                        repo_and_revision_exist, _ = self._repo_and_revision_exist(repo_type, repo_id, revision)
+                        if not repo_and_revision_exist:
+                            raise FileNotFoundError(path) from err
+                    else:
+                        raise FileNotFoundError(path) from err
         else:
+            repo_id = path
+            path_in_repo = ""
             if "@" in path:
-                path, revision = path.split("@", 1)
-                revision = unquote(revision)
-            else:
-                revision = None
-            if self._repo_exists(path, repo_type=repo_type):
-                repo_id = path
-                path_in_repo = ""
-            else:
-                # can't list repositories at the namespace level
+                repo_id, revision_in_path = path.split("@", 1)
+                revision_in_path = unquote(revision_in_path)
+                revision = _align_revision_in_path_with_revision(revision_in_path, revision)
+            repo_and_revision_exist, _ = self._repo_and_revision_exist(repo_type, repo_id, revision)
+            if not repo_and_revision_exist:
                 raise NotImplementedError("Acces to repositories lists is not implemented.")
 
-        return repo_type, repo_id, revision, path_in_repo
-
-    def _resolve_path_with_revision(self, path: str, revision: Optional[str]) -> Tuple[str, str, str, str]:
-        repo_type, repo_id, revision_in_path, path_in_repo = self.resolve_path(path)
-        if revision is not None:
-            if revision_in_path is not None and revision_in_path != revision:
-                raise ValueError(
-                    f'Revision specified in path ("{revision_in_path}") and in `revision` argument ("{revision}") are'
-                    " not the same."
-                )
-        else:
-            revision = revision_in_path
-        return repo_type, repo_id, revision, path_in_repo
-
-    def _unresolve_path(self, repo_type: str, repo_id: str, revision: Optional[str], path_in_repo: str) -> str:
-        path = huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id
-        if revision is not None:
-            path += "@" + quote(revision, safe="")
-        path += "/" + path_in_repo
-        path = path.rstrip("/")
-        return path
+        revision = revision if revision is not None else huggingface_hub.constants.DEFAULT_REVISION
+        return ResolvedPath(repo_type, repo_id, revision, path_in_repo)
 
     def invalidate_cache(self, path=None):
         if not path:
@@ -156,9 +179,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             self._repository_type_and_id_exists_cache.clear()
         else:
             path = self._strip_protocol(path)
-            repo_type, repo_id, revision, path_in_repo = self.resolve_path(path)
-            revision = revision if revision is not None else huggingface_hub.constants.DEFAULT_REVISION
-            path = self._unresolve_path(repo_type, repo_id, revision, path_in_repo)
+            path = self.resolve_path(path).unresolve()
             while path:
                 self.dircache.pop(path, None)
                 path = self._parent(path)
@@ -177,23 +198,25 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 
     def _rm(self, path, revision: Optional[str] = None, **kwargs):
         path = self._strip_protocol(path)
-        repo_type, repo_id, revision, path_in_repo = self._resolve_path_with_revision(path, revision)
-        operations = [huggingface_hub.CommitOperationDelete(path_in_repo=path_in_repo)]
+        resolved_path = self.resolve_path(path, revision=revision)
+        operations = [huggingface_hub.CommitOperationDelete(path_in_repo=resolved_path.path_in_repo)]
         commit_message = f"Delete {path}"
         self._api.create_commit(
-            repo_id=repo_id,
-            repo_type=repo_type,
+            repo_id=resolved_path.repo_id,
+            repo_type=resolved_path.repo_type,
             token=self.token,
             operations=operations,
             revision=revision,
             commit_message=kwargs.get("commit_message", commit_message),
             commit_description=kwargs.get("commit_description"),
         )
-        self.invalidate_cache(path=self._unresolve_path(repo_type, repo_id, revision, path_in_repo))
+        self.invalidate_cache(path=resolved_path.unresolve())
 
     def rm(self, path, recursive=False, maxdepth=None, revision: Optional[str] = None, **kwargs):
-        repo_type, repo_id, revision, path_in_repo = self._resolve_path_with_revision(path, revision)
-        root_path = huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(repo_type, "") + repo_id
+        resolved_path = self.resolve_path(path, revision=revision)
+        root_path = (
+            huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(resolved_path.repo_type, "") + resolved_path.repo_id
+        )
         paths = self.expand_path(path, recursive=recursive, maxdepth=maxdepth, revision=revision)
         paths_in_repo = [path[len(root_path) + 1 :] for path in paths if not self.isdir(path)]
         operations = [
@@ -204,29 +227,32 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         commit_message += f"up to depth {maxdepth} " if maxdepth is not None else ""
         # TODO: use `commit_description` to list all the deleted paths?
         self._api.create_commit(
-            repo_id=repo_id,
-            repo_type=repo_type,
+            repo_id=resolved_path.repo_id,
+            repo_type=resolved_path.repo_type,
             token=self.token,
             operations=operations,
             revision=revision,
             commit_message=kwargs.get("commit_message", commit_message),
             commit_description=kwargs.get("commit_description"),
         )
-        self.invalidate_cache(path=self._unresolve_path(repo_type, repo_id, revision, path_in_repo))
+        self.invalidate_cache(path=resolved_path.unresolve())
 
     def ls(self, path, detail=True, refresh=False, revision: Optional[str] = None, **kwargs):
         path = self._strip_protocol(path)
-        repo_type, repo_id, revision_in_path, path_in_repo = self.resolve_path(path)
-        repo_type, repo_id, revision, path_in_repo = self._resolve_path_with_revision(path, revision)
-        revision = revision if revision is not None else huggingface_hub.constants.DEFAULT_REVISION
-        path = self._unresolve_path(repo_type, repo_id, revision, path_in_repo)
+        resolved_path = self.resolve_path(path, revision=revision)
+        revision_in_path = "@" + quote(resolved_path.revision, "")
+        has_revision_in_path = revision_in_path in path
+        path = resolved_path.unresolve()
         if path not in self.dircache or refresh:
-            path_prefix = self._unresolve_path(repo_type, repo_id, revision, "") + "/"
+            path_prefix = (
+                ResolvedPath(resolved_path.repo_type, resolved_path.repo_id, resolved_path.revision, "").unresolve()
+                + "/"
+            )
             tree_iter = self._iter_tree(path, revision=revision)
             try:
                 tree_item = next(tree_iter)
             except huggingface_hub.utils.EntryNotFoundError:
-                if "/" in path_in_repo:
+                if "/" in resolved_path.path_in_repo:
                     path = self._parent(path)
                     tree_iter = self._iter_tree(path)
                 else:
@@ -251,31 +277,32 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 child_infos.append(child_info)
             self.dircache[path] = child_infos
         out = self._ls_from_cache(path)
-        if revision_in_path is None:
-            out = [{**o, "name": o["name"].replace("@" + revision, "", 1)} for o in out]
+        if not has_revision_in_path:
+            out = [{**o, "name": o["name"].replace(revision_in_path, "", 1)} for o in out]
         return out if detail else [o["name"] for o in out]
 
     def _iter_tree(self, path: str, revision: Optional[str] = None):
         path = self._strip_protocol(path)
-        repo_type, repo_id, revision, path_in_repo = self._resolve_path_with_revision(path, revision)
-        revision = quote(revision, safe="") if revision is not None else huggingface_hub.constants.DEFAULT_REVISION
-        path = (f"{self._api.endpoint}/api/{repo_type}s/{repo_id}/tree/{revision}/{path_in_repo}").rstrip("/")
+        resolved_path = self.resolve_path(path, revision=revision)
+        path = (
+            f"{self._api.endpoint}/api/{resolved_path.repo_type}s/{resolved_path.repo_id}/tree/{quote(resolved_path.revision, safe='')}/{resolved_path.path_in_repo}"
+            .rstrip("/")
+        )
         headers = self._api._build_hf_headers()
         yield from huggingface_hub.utils._pagination.paginate(path, params=None, headers=headers)
 
     def cp_file(self, path1, path2, revision: Optional[str] = None, **kwargs):
-        repo_type1, repo_id1, revision1, path_in_repo1 = self._resolve_path_with_revision(path1, revision)
         path1 = self._strip_protocol(path1)
-        repo_type2, repo_id2, revision2, path_in_repo2 = self._resolve_path_with_revision(path2, revision)
+        resolved_path1 = self.resolve_path(path1, revision=revision)
         path2 = self._strip_protocol(path2)
+        resolved_path2 = self.resolve_path(path2, revision=revision)
 
-        same_repo = repo_type1 == repo_type2 and repo_id1 == repo_id2
-
-        if not same_repo and revision is not None:
-            raise ValueError("The `revision` argument is ambiguous when copying between two different repositories.")
+        same_repo = (
+            resolved_path1.repo_type == resolved_path2.repo_type and resolved_path1.repo_id == resolved_path2.repo_id
+        )
 
         # TODO: Wait for https://github.com/huggingface/huggingface_hub/issues/1083 to be resolved to simplify this logic
-        if same_repo and self.info(path1, revision=revision1)["lfs"] is not None:
+        if same_repo and self.info(path1, revision=resolved_path1.revision)["lfs"] is not None:
             headers = self._api._build_hf_headers(is_write_action=True)
             commit_message = f"Copy {path1} to {path2}"
             payload = {
@@ -284,38 +311,37 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 "files": [],
                 "lfsFiles": [
                     {
-                        "path": path_in_repo2,
+                        "path": resolved_path2.path_in_repo,
                         "algo": "sha256",
-                        "oid": self.info(path1, revision=revision1)["lfs"]["oid"],
+                        "oid": self.info(path1, revision=resolved_path1.revision)["lfs"]["oid"],
                     }
                 ],
                 "deletedFiles": [],
             }
-            revision2 = (
-                quote(revision2, safe="") if revision2 is not None else huggingface_hub.constants.DEFAULT_REVISION
-            )
             r = requests.post(
-                f"{self.endpoint}/api/{repo_type1}s/{repo_id1}/commit/{revision2}",
+                (
+                    f"{self.endpoint}/api/{resolved_path1.repo_type}s/{resolved_path1.repo_id}/commit/{quote(resolved_path2.revision, safe='')}"
+                ),
                 json=payload,
                 headers=headers,
             )
             huggingface_hub.utils.hf_raise_for_status(r)
         else:
-            with self.open(path1, "rb", revision=revision1) as f:
+            with self.open(path1, "rb", revision=resolved_path1.revision) as f:
                 content = f.read()
             commit_message = f"Copy {path1} to {path2}"
             self._api.upload_file(
                 path_or_fileobj=content,
-                path_in_repo=path_in_repo2,
-                repo_id=repo_id2,
+                path_in_repo=resolved_path2.path_in_repo,
+                repo_id=resolved_path2.repo_id,
                 token=self.token,
-                repo_type=repo_type2,
-                revision=revision2,
+                repo_type=resolved_path2.repo_type,
+                revision=resolved_path2.revision,
                 commit_message=kwargs.get("commit_message", commit_message),
                 commit_description=kwargs.get("commit_description"),
             )
-        self.invalidate_cache(path=self._unresolve_path(repo_type1, repo_id1, revision1, path_in_repo1))
-        self.invalidate_cache(path=self._unresolve_path(repo_type2, repo_id2, revision2, path_in_repo2))
+        self.invalidate_cache(path=resolved_path1.unresolve())
+        self.invalidate_cache(path=resolved_path2.unresolve())
 
     def modified(self, path, **kwargs):
         info = self.info(path, **kwargs)
@@ -325,8 +351,8 @@ class HfFileSystem(fsspec.AbstractFileSystem):
 
     def info(self, path, **kwargs):
         path = self._strip_protocol(path)
-        repo_type, repo_id, revision, path_in_repo = self.resolve_path(path)
-        if not path_in_repo:
+        resolved_path = self.resolve_path(path)
+        if not resolved_path.path_in_repo:
             return {"name": path, "size": None, "type": "directory"}
         return super().info(path, **kwargs)
 
@@ -361,18 +387,15 @@ class HfFile(fsspec.spec.AbstractBufferedFile):
     def __init__(self, fs: HfFileSystem, path: str, revision: Optional[str] = None, **kwargs):
         super().__init__(fs, path, **kwargs)
         self.fs: HfFileSystem
-        self.repo_type, self.repo_id, self.revision, self.path_in_repo = fs._resolve_path_with_revision(path, revision)
+        self.resolved_path = fs.resolve_path(path, revision=revision)
 
     def _fetch_range(self, start, end):
         headers = {
             "range": f"bytes={start}-{end - 1}",
             **self.fs._api._build_hf_headers(),
         }
-        revision = (
-            quote(self.revision, safe="") if self.revision is not None else huggingface_hub.constants.DEFAULT_REVISION
-        )
         url = (
-            f"{self.fs.endpoint}/{huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(self.repo_type, '') + self.repo_id}/resolve/{revision}/{quote(self.path_in_repo, safe='')}"
+            f"{self.fs.endpoint}/{huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(self.resolved_path.repo_type, '') + self.resolved_path.repo_id}/resolve/{quote(self.resolved_path.revision, safe='')}/{quote(self.resolved_path.path_in_repo, safe='')}"
         )
         r = huggingface_hub.utils.http_backoff("GET", url, headers=headers)
         huggingface_hub.utils.hf_raise_for_status(r)
@@ -390,15 +413,15 @@ class HfFile(fsspec.spec.AbstractBufferedFile):
             commit_message = f"Upload {self.path}"
             self.fs._api.upload_file(
                 path_or_fileobj=self.temp_file.name,
-                path_in_repo=self.path_in_repo,
-                repo_id=self.repo_id,
+                path_in_repo=self.resolved_path.path_in_repo,
+                repo_id=self.resolved_path.repo_id,
                 token=self.fs.token,
-                repo_type=self.repo_type,
-                revision=self.revision,
+                repo_type=self.resolved_path.repo_type,
+                revision=self.resolved_path.revision,
                 commit_message=self.kwargs.get("commit_message", commit_message),
                 commit_description=self.kwargs.get("commit_description"),
             )
             os.remove(self.temp_file.name)
             self.fs.invalidate_cache(
-                path=self.fs._unresolve_path(self.repo_type, self.repo_id, self.revision, self.path_in_repo)
+                path=self.resolved_path.unresolve(),
             )
