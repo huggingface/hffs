@@ -206,7 +206,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             repo_type=resolved_path.repo_type,
             token=self.token,
             operations=operations,
-            revision=revision,
+            revision=resolved_path.revision,
             commit_message=kwargs.get("commit_message", commit_message),
             commit_description=kwargs.get("commit_description"),
         )
@@ -217,7 +217,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         root_path = (
             huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.get(resolved_path.repo_type, "") + resolved_path.repo_id
         )
-        paths = self.expand_path(path, recursive=recursive, maxdepth=maxdepth, revision=revision)
+        paths = self.expand_path(path, recursive=recursive, maxdepth=maxdepth, revision=resolved_path.revision)
         paths_in_repo = [path[len(root_path) + 1 :] for path in paths if not self.isdir(path)]
         operations = [
             huggingface_hub.CommitOperationDelete(path_in_repo=path_in_repo) for path_in_repo in paths_in_repo
@@ -231,7 +231,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
             repo_type=resolved_path.repo_type,
             token=self.token,
             operations=operations,
-            revision=revision,
+            revision=resolved_path.revision,
             commit_message=kwargs.get("commit_message", commit_message),
             commit_description=kwargs.get("commit_description"),
         )
@@ -248,7 +248,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
                 ResolvedPath(resolved_path.repo_type, resolved_path.repo_id, resolved_path.revision, "").unresolve()
                 + "/"
             )
-            tree_iter = self._iter_tree(path, revision=revision)
+            tree_iter = self._iter_tree(path, revision=resolved_path.revision)
             try:
                 tree_item = next(tree_iter)
             except huggingface_hub.utils.EntryNotFoundError:
