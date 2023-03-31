@@ -119,7 +119,7 @@ class HfFileSystem(fsspec.AbstractFileSystem):
         path = self._strip_protocol(path)
         if not path:
             # can't list repositories at root
-            raise NotImplementedError("Acces to repositories lists is not implemented.")
+            raise NotImplementedError("Access to repositories lists is not implemented.")
         elif path.split("/")[0] + "/" in huggingface_hub.constants.REPO_TYPES_URL_PREFIXES.values():
             if "/" not in path:
                 # can't list repositories at the repository type level
