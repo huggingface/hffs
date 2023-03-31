@@ -121,7 +121,7 @@ pip install hffs
 
 ## Authentication
 
-To write to your repotitories or access your private repositorories; you can login by running
+To write to your repositories or access your private repositories; you can login by running
 
 ```bash
 huggingface-cli login
