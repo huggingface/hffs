@@ -1,3 +1,6 @@
+> **Warning**
+> `hffs` is no longer maintained. Please use `huggingface_hub`'s [FileSystem API](https://huggingface.co/docs/huggingface_hub/main/en/guides/hf_file_system) instead. 
+
 # `hffs`
 
 `hffs` builds on [`huggingface_hub`](https://github.com/huggingface/huggingface_hub) and [`fsspec`](https://github.com/fsspec/filesystem_spec) to provide a convenient Python filesystem interface to 🤗 Hub.
